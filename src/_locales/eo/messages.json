@@ -92,7 +92,7 @@
         "description": "Dropdown control setting on the Tracking Domains options page tab."
     },
     "options_webrtc_setting": {
-        "message": "Preventi WebRTC de malkovri lokan IP-adreson",
+        "message": "Preventi WebRTC de malkovri lokan IP-adreson *",
         "description": "Checkbox label on the general settings page"
     },
     "intro_welcome": {
@@ -255,10 +255,6 @@
         "message": "Mi konscias, tamen bonvolu montri al mi la liston de spurantaj nomregnoj.",
         "description": "Acknowledgement shown next to the checkbox required to reveal the tracking domains list on the options page."
     },
-    "intro_donate2": {
-        "message": "Helpu nin per donaci kaj oferi vian subtenon!",
-        "description": "Part of the 'donate' section on the intro page."
-    },
     "firstRun_title": {
         "message": "Dankon al vi pro instali Privatan Melon!",
         "description": ""
@@ -398,6 +394,10 @@
     "intro_donate1": {
         "message": "Kiam vi uzas Privatan Melon vi aniĝas al la <a href='https://www.eff.org/' target='_blank'>Ret-Lima Fondaĵo (EFF)</a> kune kun milionoj da aliaj retanoj en la batalo por privateco. Ni estas ne-profit-cela fondaĵo, kiu batalas por viaj rajtoj en la Teksaĵo. Dankon por kuniĝi nin!",
         "description": "Part of the 'donate' section on the intro page."
+    },
+    "options_domain_search_tooltip": {
+        "message": "Por escepti nomregnojn, antaŭtajpu via serĉon per “-”. Ekzemplo: “co -.com” montros domajnojn .co kaj .co.uk sed ne .com.",
+        "description": "Tooltip for an \"information\" icon next to the domain search input on the Tracking Domains options page tab."
     },
     "intro_disable_button": {
         "message": "Se viaopinie Privata Melo difektas retpaĝon (ekzemple filmeto ne ludas), vi povas klaki la butonon “malaktivigi” por malaktivigi Privatan Melon por tiu retejo.",

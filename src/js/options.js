@@ -15,6 +15,8 @@
  * along with Adblock Plus.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/* globals getOriginsArray:false */
+
 // TODO: This code is a hideous mess and desperately needs to be refactored and cleaned up.
 
 // TODO hack: disable Tooltipster tooltips on Firefox to avoid unresponsive script warnings
@@ -117,7 +119,18 @@ function loadOptions() {
 
   if (badger.webRTCAvailable) {
     $("#toggle_webrtc_mode").on("click", toggleWebRTCIPProtection);
-    $("#toggle_webrtc_mode").prop("checked", badger.isWebRTCIPProtectionEnabled());
+
+    badger.isWebRTCIPProtectionEnabled(function (result) {
+      if (result.levelOfControl.endsWith("_by_this_extension")) {
+        $("#toggle_webrtc_mode").attr("disabled", false);
+      }
+
+      $("#toggle_webrtc_mode").prop(
+        "checked",
+        result.value == "disable_non_proxied_udp"
+      );
+    });
+
   } else {
     // Hide WebRTC-related settings for non-supporting browsers
     $("#webRTCToggle").hide();
@@ -128,9 +141,8 @@ function loadOptions() {
     .on("click", updateLearnInIncognito)
     .prop("checked", badger.isLearnInIncognitoEnabled());
 
-  // Show user's filters
   reloadWhitelist();
-  refreshFilterPage();
+  reloadTrackingDomainsTab();
 
   $('html').css('visibility', 'visible');
 }
@@ -170,7 +182,7 @@ function importTrackerList() {
  * Parse the tracker lists uploaded by the user, adding to the
  * storage maps anything that isn't currently present.
  *
- * @param {string} storageMapsList Data from JSON file that user provided
+ * @param {String} storageMapsList Data from JSON file that user provided
  */
 function parseUserDataFile(storageMapsList) {
   var lists;
@@ -195,7 +207,7 @@ function parseUserDataFile(storageMapsList) {
   }, () => {
     // Update list to reflect new status of map
     reloadWhitelist();
-    refreshFilterPage();
+    reloadTrackingDomainsTab();
     confirm(i18n.getMessage("import_successful"));
   });
 }
@@ -315,7 +327,7 @@ function updateCheckingDNTPolicy() {
       checkForDNTPolicy: enabled
     }
   }, () => {
-    refreshFilterPage(); // This setting means sites need to be re-evaluated
+    reloadTrackingDomainsTab(); // This setting means sites need to be re-evaluated
   });
 }
 
@@ -346,55 +358,6 @@ function refreshOriginCache() {
   originCache = getOrigins();
 }
 
-/**
- * Gets array of encountered origins.
- *
- * @param filter_text {String} Text to filter origins with.
- * @param type_filter {String} Type (user-controlled, DNT-compliant) to filter
- *   origins by.
- * @param status_filter {String} Status (blocked, cookieblocked, allowed) to
- *   filter origins by.
- *
- * @return {Array}
- */
-function getOriginsArray(filter_text, type_filter, status_filter) {
-  // Make sure filter_text is lower case for case-insensitive matching.
-  if (filter_text) {
-    filter_text = filter_text.toLowerCase();
-  } else {
-    filter_text = "";
-  }
-
-  function matchesFormFilters(origin) {
-    const value = originCache[origin];
-
-    if (type_filter) {
-      if (type_filter == "user") {
-        if (!value.startsWith("user")) {
-          return false;
-        }
-      } else {
-        if (value != type_filter) {
-          return false;
-        }
-      }
-    }
-
-    if (status_filter) {
-      if (status_filter != value.replace("user_", "") && !(
-        status_filter == "allow" && value == "dnt"
-      )) {
-        return false;
-      }
-    }
-
-    return origin.toLowerCase().indexOf(filter_text) !== -1;
-  }
-
-  // Include only origins that match given filters.
-  return Object.keys(originCache).filter(matchesFormFilters);
-}
-
 function addWhitelistDomain(event) {
   event.preventDefault();
 
@@ -421,7 +384,7 @@ function removeWhitelistDomain(event) {
   reloadWhitelist();
 }
 
-// filter slider functions
+// Tracking Domains slider functions
 
 /**
  * Gets all encountered origins with associated actions.
@@ -442,7 +405,7 @@ function getOrigins() {
 
 /**
  * Gets action for given origin.
- * @param origin Origin to get action for.
+ * @param {String} origin - Origin to get action for.
  */
 function getOriginAction(origin) {
   // Check to see if cached origins need to be set.
@@ -465,18 +428,18 @@ function revertDomainControl(e) {
   log('selector', selector);
   selector.click();
   $elm.removeClass('userset');
-  refreshFilterPage(origin);
+  reloadTrackingDomainsTab(origin);
   return false;
 }
 
 /**
  * Displays list of all tracking domains along with toggle controls.
  */
-function refreshFilterPage() {
+function reloadTrackingDomainsTab() {
   refreshOriginCache();
 
   // Check to see if any tracking domains have been found before continuing.
-  var allTrackingDomains = getOriginsArray();
+  var allTrackingDomains = getOriginsArray(originCache);
   if (!allTrackingDomains || allTrackingDomains.length === 0) {
     // leave out number of trackers and slider instructions message if no sliders will be displayed
     $("#pb_has_detected").hide();
@@ -495,7 +458,7 @@ function refreshFilterPage() {
     return;
   }
 
-  // refreshFilterPage can be called multiple times, needs to be reversible
+  // reloadTrackingDomainsTab can be called multiple times, needs to be reversible
   $("#options_domain_list_no_trackers").hide();
   $("#tracking-domains-div").show();
 
@@ -523,20 +486,20 @@ function refreshFilterPage() {
   // Display tracking domains.
   showTrackingDomains(
     getOriginsArray(
+      originCache,
       $("#trackingDomainSearch").val(),
       $('#tracking-domains-type-filter').val(),
       $('#tracking-domains-status-filter').val()
     )
   );
 
-  log("Done refreshing options page");
+  log("Done refreshing tracking domains tab");
 }
 
 /**
  * Displays filtered list of tracking domains based on user input.
- * @param event Input event triggered by user.
  */
-function filterTrackingDomains(/*event*/) {
+function filterTrackingDomains() {
   const $typeFilter = $('#tracking-domains-type-filter');
   const $statusFilter = $('#tracking-domains-status-filter');
 
@@ -560,6 +523,7 @@ function filterTrackingDomains(/*event*/) {
 
     // Show filtered origins.
     var filteredOrigins = getOriginsArray(
+      originCache,
       searchText,
       $typeFilter.val(),
       $statusFilter.val()
@@ -569,7 +533,49 @@ function filterTrackingDomains(/*event*/) {
 }
 
 /**
- * Add origins to the blocked resources list on scroll.
+ * Registers handlers for tracking domain toggle controls.
+ * @param {jQuery} $toggleElement jQuery object for the tracking domain element to be registered.
+ */
+// TODO unduplicate this code? since a version of it is also in popup
+function registerToggleHandlers($toggleElement) {
+  var radios = $toggleElement.children('input');
+  var value = $toggleElement.children('input:checked').val();
+
+  var slider = $('<div></div>').slider({
+    min: 0,
+    max: 2,
+    value: value,
+    create: function(/*event, ui*/) {
+      // Set the margin for the handle of the slider we're currently creating,
+      // depending on its blocked/cookieblocked/allowed value (this == .ui-slider)
+      $(this).children('.ui-slider-handle').css('margin-left', -16 * value + 'px');
+    },
+    slide: function(event, ui) {
+      radios.filter('[value=' + ui.value + ']').click();
+    },
+    stop: function(event, ui) {
+      $(ui.handle).css('margin-left', -16 * ui.value + 'px');
+
+      // Save change for origin.
+      var origin = radios.filter('[value=' + ui.value + ']')[0].name;
+      var setting = htmlUtils.getCurrentClass($toggleElement.parents('.clicker'));
+      chrome.runtime.sendMessage({
+        type: "saveOptionsToggle",
+        action: setting,
+        origin: origin
+      }, () => {
+        reloadTrackingDomainsTab();
+      });
+    },
+  }).appendTo($toggleElement);
+
+  radios.on("change", function() {
+    slider.slider('value', radios.filter(':checked').val());
+  });
+}
+
+/**
+ * Adds more origins to the blocked resources list on scroll.
  *
 */
 function addOrigins(e) {
@@ -581,6 +587,9 @@ function addOrigins(e) {
     var action = getOriginAction(domain);
     if (action) {
       $(target).append(htmlUtils.getOriginHtml(domain, action, action == constants.DNT));
+
+      // register the newly-created toggle switch so that user changes are saved
+      registerToggleHandlers($(target).find("[data-origin='" + domain + "'] .switch-toggle"));
     }
   }
 
@@ -591,12 +600,12 @@ function addOrigins(e) {
 
 /**
  * Displays list of tracking domains along with toggle controls.
- * @param domains {Array} Tracking domains to display.
+ * @param {Array} domains Tracking domains to display.
  */
 function showTrackingDomains(domains) {
   domains.sort(htmlUtils.compareReversedDomains);
 
-  // Create HTML for list of tracking domains.
+  // Create HTML for the initial list of tracking domains.
   var trackingDetails = '';
   for (var i = 0; (i < 50) && (domains.length > 0); i++) {
     var trackingDomain = domains.shift();
@@ -619,44 +628,13 @@ function showTrackingDomains(domains) {
 
   // Register handlers for tracking domain toggle controls.
   $('.switch-toggle').each(function() {
-    var radios = $(this).children('input');
-    var value = $(this).children('input:checked').val();
-
-    var slider = $('<div></div>').slider({
-      min: 0,
-      max: 2,
-      value: value,
-      create: function(/*event, ui*/) {
-        $(this).children('.ui-slider-handle').css('margin-left', -16 * value + 'px');
-      },
-      slide: function(event, ui) {
-        radios.filter('[value=' + ui.value + ']').click();
-      },
-      stop: function(event, ui) {
-        $(ui.handle).css('margin-left', -16 * ui.value + 'px');
-
-        // Save change for origin.
-        var origin = radios.filter('[value=' + ui.value + ']')[0].name;
-        var setting = htmlUtils.getCurrentClass($(this).parents('.clicker'));
-        chrome.runtime.sendMessage({
-          type: "saveOptionsToggle",
-          action: setting,
-          origin: origin
-        }, () => {
-          refreshFilterPage();
-        });
-      },
-    }).appendTo(this);
-
-    radios.on("change", function() {
-      slider.slider('value', radios.filter(':checked').val());
-    });
+    registerToggleHandlers($(this));
   });
-}
 
+}
 /**
  * https://tools.ietf.org/html/draft-ietf-rtcweb-ip-handling-01#page-5
- * (Chrome only)
+ *
  * Toggle WebRTC IP address leak protection setting. "False" value means
  * policy is set to Mode 3 (default_public_interface_only), whereas "true"
  * value means policy is set to Mode 4 (disable_non_proxied_udp).
@@ -666,40 +644,45 @@ function toggleWebRTCIPProtection() {
   if (!badger.webRTCAvailable) {
     return;
   }
-  var cpn = chrome.privacy.network;
 
-  cpn.webRTCIPHandlingPolicy.get({}, function(result) {
-    var newVal;
+  let cpn = chrome.privacy.network;
+
+  cpn.webRTCIPHandlingPolicy.get({}, function (result) {
+    let value;
 
     // Update new value to be opposite of current browser setting
     if (result.value === 'disable_non_proxied_udp') {
-      newVal = 'default_public_interface_only';
+      value = 'default_public_interface_only';
     } else {
-      newVal = 'disable_non_proxied_udp';
+      value = 'disable_non_proxied_udp';
     }
-    cpn.webRTCIPHandlingPolicy.set({value: newVal}, function() {
-      chrome.runtime.sendMessage({
-        type: "updateSettings",
-        data: {
-          webRTCIPProtection: (newVal === 'disable_non_proxied_udp')
-        }
-      });
-    });
+
+    cpn.webRTCIPHandlingPolicy.set({value});
   });
 }
 
+/**
+ * Update the user preferences displayed for this origin.
+ * These UI changes will later be used to update user preferences data.
+ *
+ * @param {Event} event Click event triggered by user.
+ */
+//TODO unduplicate this code? since it's also in popup
 function updateOrigin(event) {
+  // get the origin and new action for it
   var $elm = $('label[for="' + event.currentTarget.id + '"]');
   log('updating origin for', $elm);
-  var $switchContainer = $elm.parents('.switch-container').first();
-  var $clicker = $elm.parents('.clicker').first();
   var action = $elm.data('action');
+
+  // replace the old action with the new one
+  var $switchContainer = $elm.parents('.switch-container').first();
   $switchContainer.removeClass([
     constants.BLOCK,
     constants.COOKIEBLOCK,
     constants.ALLOW,
     constants.NO_TRACKING].join(" ")).addClass(action);
-  htmlUtils.toggleBlockedStatus($($clicker), action);
+  var $clicker = $elm.parents('.clicker').first();
+  htmlUtils.toggleBlockedStatus($clicker, action);
 
   // reinitialize the domain tooltip
   $clicker.find('.origin').tooltipster('destroy');
@@ -712,7 +695,7 @@ function updateOrigin(event) {
 
 /**
  * Remove origin from Privacy Badger.
- * @param event {Event} Click event triggered by user.
+ * @param {Event} event Click event triggered by user.
  */
 function removeOrigin(event) {
   // Confirm removal before proceeding.
@@ -728,6 +711,6 @@ function removeOrigin(event) {
     type: "removeOrigin",
     origin: origin
   }, () => {
-    refreshFilterPage();
+    reloadTrackingDomainsTab();
   });
 }

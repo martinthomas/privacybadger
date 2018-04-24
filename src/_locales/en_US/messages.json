@@ -255,10 +255,6 @@
         "message": "I understand; please show me the tracking domains list anyway",
         "description": "Acknowledgement shown next to the checkbox required to reveal the tracking domains list on the options page."
     },
-    "intro_donate2": {
-        "message": "Help us by donating and sharing your support!",
-        "description": "Part of the 'donate' section on the intro page."
-    },
     "firstRun_title": {
         "message": "Thank you for installing Privacy Badger!",
         "description": ""
@@ -398,6 +394,10 @@
     "intro_donate1": {
         "message": "When you use Privacy Badger you join the <a href='https://www.eff.org/' target='_blank'>Electronic Frontier Foundation</a> and millions of other users in the fight for privacy. We are a nonprofit fighting for your rights online. Thanks for joining us!",
         "description": "Part of the 'donate' section on the intro page."
+    },
+    "options_domain_search_tooltip": {
+        "message": "To exclude domains, prepend your search term with \"-\". For example, \".co -.com\" will show .co and .co.uk but not .com domains.",
+        "description": "Tooltip for an \"information\" icon next to the domain search input on the Tracking Domains options page tab."
     },
     "intro_disable_button": {
         "message": "If you think Privacy Badger is breaking a page (a video doesn't play, for example), you can click the 'Disable' button to turn off Privacy Badger for that site.",

@@ -255,10 +255,6 @@
         "message": "Tak, rozumiem, ale proszę wyświetlić mi listę szpiegujących domen.",
         "description": "Acknowledgement shown next to the checkbox required to reveal the tracking domains list on the options page."
     },
-    "intro_donate2": {
-        "message": "Wspomóż nas finansowo lub swoją wiedzą!",
-        "description": "Part of the 'donate' section on the intro page."
-    },
     "firstRun_title": {
         "message": "Dziękujemy za zainstalowanie Privacy Badgera!",
         "description": ""
@@ -398,6 +394,10 @@
     "intro_donate1": {
         "message": "Podczas korzystania z Privacy Badgera stajesz się członkiem <a href='https://www.eff.org/' target='_blank'>Electronic Frontier Foundation</a> wraz z milionami użytkowników walczącymi o prywatność. Jesteśmy organizacją non-profit walczącą o Twoje praw w Sieci. Dziękujemy za dołączenie do nas!",
         "description": "Part of the 'donate' section on the intro page."
+    },
+    "options_domain_search_tooltip": {
+        "message": "Aby wykluczyć domeny, poprzedź wyszukiwaną frazę znakiem „-”. Przykład: „.co -.com” wskaże domeny .co i .co.uk, ale nie .com.",
+        "description": "Tooltip for an \"information\" icon next to the domain search input on the Tracking Domains options page tab."
     },
     "intro_disable_button": {
         "message": "Jeżeli Twoim zdaniem Privacy Badger zepsuł jakąś stronę (np. filmik się nie odtwarza), możesz kliknąć przycisk „wyłącz”, aby wyłączyć dodatek dla tej strony.",

@@ -255,10 +255,6 @@
         "message": "Понятно; пожалуйста покажите список трекеров",
         "description": "Acknowledgement shown next to the checkbox required to reveal the tracking domains list on the options page."
     },
-    "intro_donate2": {
-        "message": "Помогите нам пожертвованиями и вашей поддержкой!",
-        "description": "Part of the 'donate' section on the intro page."
-    },
     "firstRun_title": {
         "message": "Спасибо вам за то, что установили Privacy Badger!",
         "description": ""
@@ -398,6 +394,10 @@
     "intro_donate1": {
         "message": "Когда вы используете Privacy Badger, вы присоединяетесь к <a href='https://www.eff.org/' target='_blank'>Electronic Frontier Foundation</a> и миллионам других пользователей в борьбе за приватность. Мы — некоммерческая организация, борющаяся на ваши права в Интернете. Спасибо, что присоединились к нам!",
         "description": "Part of the 'donate' section on the intro page."
+    },
+    "options_domain_search_tooltip": {
+        "message": "Для исключения доменов, добавьте \"-\" перед поисковым запросом. Например, \".co -.com\" выведет .co и .co.uk, но не домены .com.",
+        "description": "Tooltip for an \"information\" icon next to the domain search input on the Tracking Domains options page tab."
     },
     "intro_disable_button": {
         "message": "Если вы думаете, что Privacy Badger портит веб-страницу (например, не воспроизводится видео), вы можете нажать кнопку 'Отключить', чтобы выключить Privacy Badger для этого сайта.",

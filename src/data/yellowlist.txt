@@ -265,6 +265,7 @@ googleusercontent.com
 googlevideo.com
 governmentjobs.com
 gravatar.com
+greenhouse.io
 gscdn.nl
 gstatic.com
 hackerone-user-content.com
@@ -342,6 +343,7 @@ licensebuttons.net
 addon.lidl.de
 media.lidl.com
 linkwithin.com
+list-manage.com
 i.lithium.com
 messenger.live.com
 livechatinc.com
@@ -353,6 +355,7 @@ loggly.com
 logos.com
 lphbs.com
 mail.ru
+mailchimp.com
 mapbox.com
 mapquestapi.com
 marketo.com
@@ -431,6 +434,7 @@ optimizely.com
 oregonlive.com
 outlook.com
 pandacommerce.net
+parastorage.com
 passwordbox.com
 paypal.com
 paypalobjects.com
