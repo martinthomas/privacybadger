@@ -216,7 +216,7 @@
         "description": "Part of a reminder to visit the intro page. Shown in popup until the user clicks on the reminder link or browses through the intro page."
     },
     "options_webrtc_warning": {
-        "message": "* WebRTC può rivelare il tuo indirizzo IP locale. L'impostazione predefinita di Privacy Badger aiuta a proteggerti, ma per una protezione aggiuntiva dovresti attivare questa opzione. Nota che questo potrebbe diminuire le prestazioni di alcuni strumenti come Google Hangouts.",
+        "message": "* WebRTC può rivelare il tuo indirizzo IP locale. Nota che attivare questa opzione potrebbe incidere sulle prestazioni con app di conferenze web come Google Hangouts.",
         "description": "Detailed explanation shown under checkboxes on the general settings page"
     },
     "options_general_settings": {
@@ -402,6 +402,10 @@
     "intro_disable_button": {
         "message": "Se pensi che Privacy Badger stia dando problemi a una pagina (ad esempio un video non si avvia), puoi cliccare il tasto 'Disattiva' per spegnere Privacy Badger in quel sito.",
         "description": "Intro page paragraph. The quoted string ('Disable') should match the verb used for the 'popup_disable_for_site' message."
+    },
+    "intro_link_policy": {
+        "message": "Privacy Policy",
+        "description": "Shown at the bottom of the intro page, links to the EFF software and technology projects privacy policy."
     },
     "options_domain_list_no_trackers": {
         "message": "Privacy Badger non ha ancora rilevato alcun <a target='_blank' tabindex=-1 title='i18n_what_is_a_tracker' class='tooltip' href='https://www.eff.org/privacybadger#faq-What-is-a-third-party-tracker?'>dominio tracciante</a> . Continua a navigare!",

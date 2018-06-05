@@ -216,7 +216,7 @@
         "description": "Part of a reminder to visit the intro page. Shown in popup until the user clicks on the reminder link or browses through the intro page."
     },
     "options_webrtc_warning": {
-        "message": "* WebRTC kan lække din lokale IP-adresse. Privacy Badgers standardopsætning hjælper til at beskytte dig, men for yderligere beskyttelse kan du aktivere dette tilvalg. Bemærk at aktivering kan forværre ydelsen på nogle værktøjer, som Google Hangouts.",
+        "message": "* WebRTC kan lække din lokale IP-addresse. Bemærk at aktivering af denne funktion kan have en negativ effekt på ydeevnen af webkonferenceprogrammer som Google Hangouts.",
         "description": "Detailed explanation shown under checkboxes on the general settings page"
     },
     "options_general_settings": {
@@ -402,6 +402,10 @@
     "intro_disable_button": {
         "message": "Hvis du tror at Privacy Badger ødelægger en side (f.eks. en video spiller ikke), kan du klikke på \"Deaktiver\"-knappen for at slå Privacy Badger fra på det netsted.",
         "description": "Intro page paragraph. The quoted string ('Disable') should match the verb used for the 'popup_disable_for_site' message."
+    },
+    "intro_link_policy": {
+        "message": "Privatlivspolitik",
+        "description": "Shown at the bottom of the intro page, links to the EFF software and technology projects privacy policy."
     },
     "options_domain_list_no_trackers": {
         "message": "Privacy Badger har ikke opdaget nogle <a target='_blank' tabindex=-1 title='i18n_what_is_a_tracker' class='tooltip' href='https://www.eff.org/privacybadger#faq-What-is-a-third-party-tracker?'>sporingsdomæner</a> endnu. Fortsæt med at browse!",

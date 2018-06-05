@@ -21,11 +21,11 @@
 
 // TODO hack: disable Tooltipster tooltips on Firefox to avoid unresponsive script warnings
 (function () {
-let [, browser, ] = navigator.userAgent.match(
+const matches = navigator.userAgent.match(
   // from https://gist.github.com/ticky/3909462
   /(MSIE|(?!Gecko.+)Firefox|(?!AppleWebKit.+Chrome.+)Safari|(?!AppleWebKit.+)Chrome|AppleWebKit(?!.+Chrome|.+Safari)|Gecko(?!.+Firefox))(?: |\/)([\d.apre]+)/
 );
-if (browser == "Firefox") {
+if (!matches || matches[1] == "Firefox") {
   $.fn.tooltipster = function () {};
 }
 }());
@@ -120,15 +120,13 @@ function loadOptions() {
   if (badger.webRTCAvailable) {
     $("#toggle_webrtc_mode").on("click", toggleWebRTCIPProtection);
 
-    badger.isWebRTCIPProtectionEnabled(function (result) {
+    chrome.privacy.network.webRTCIPHandlingPolicy.get({}, result => {
       if (result.levelOfControl.endsWith("_by_this_extension")) {
         $("#toggle_webrtc_mode").attr("disabled", false);
       }
 
       $("#toggle_webrtc_mode").prop(
-        "checked",
-        result.value == "disable_non_proxied_udp"
-      );
+        "checked", result.value == "disable_non_proxied_udp");
     });
 
   } else {
@@ -344,7 +342,7 @@ function reloadWhitelist() {
   var sites = settings.getItem("disabledSites");
   var sitesList = $('#excludedDomainsBox');
   // Sort the white listed sites in the same way the blocked sites are
-  sites.sort(htmlUtils.compareReversedDomains);
+  sites = htmlUtils.sortDomains(sites);
   sitesList.html("");
   for (var i = 0; i < sites.length; i++) {
     $('<option>').text(sites[i]).appendTo(sitesList);
@@ -603,7 +601,7 @@ function addOrigins(e) {
  * @param {Array} domains Tracking domains to display.
  */
 function showTrackingDomains(domains) {
-  domains.sort(htmlUtils.compareReversedDomains);
+  domains = htmlUtils.sortDomains(domains);
 
   // Create HTML for the initial list of tracking domains.
   var trackingDetails = '';
@@ -635,9 +633,9 @@ function showTrackingDomains(domains) {
 /**
  * https://tools.ietf.org/html/draft-ietf-rtcweb-ip-handling-01#page-5
  *
- * Toggle WebRTC IP address leak protection setting. "False" value means
- * policy is set to Mode 3 (default_public_interface_only), whereas "true"
- * value means policy is set to Mode 4 (disable_non_proxied_udp).
+ * Toggle WebRTC IP address leak protection setting.
+ *
+ * When enabled, policy is set to Mode 4 (disable_non_proxied_udp).
  */
 function toggleWebRTCIPProtection() {
   // Return early with non-supporting browsers
@@ -648,16 +646,14 @@ function toggleWebRTCIPProtection() {
   let cpn = chrome.privacy.network;
 
   cpn.webRTCIPHandlingPolicy.get({}, function (result) {
-    let value;
-
     // Update new value to be opposite of current browser setting
-    if (result.value === 'disable_non_proxied_udp') {
-      value = 'default_public_interface_only';
+    if (result.value == 'disable_non_proxied_udp') {
+      cpn.webRTCIPHandlingPolicy.clear({});
     } else {
-      value = 'disable_non_proxied_udp';
+      cpn.webRTCIPHandlingPolicy.set({
+        value: 'disable_non_proxied_udp'
+      });
     }
-
-    cpn.webRTCIPHandlingPolicy.set({value});
   });
 }
 

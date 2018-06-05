@@ -28,11 +28,11 @@ let POPUP_DATA = {};
 // TODO hack: disable Tooltipster tooltips on Firefox
 // to avoid hangs on pages with enough domains to produce a scrollbar
 (function () {
-let [, browser, ] = navigator.userAgent.match(
+const matches = navigator.userAgent.match(
   // from https://gist.github.com/ticky/3909462
   /(MSIE|(?!Gecko.+)Firefox|(?!AppleWebKit.+Chrome.+)Safari|(?!AppleWebKit.+)Chrome|AppleWebKit(?!.+Chrome|.+Safari)|Gecko(?!.+Firefox))(?: |\/)([\d.apre]+)/
 );
-if (browser == "Firefox") {
+if (!matches || matches[1] == "Firefox") {
   $.fn.tooltipster = function () {};
 }
 }());
@@ -207,9 +207,20 @@ function send_error(message) {
 
     for (let origin in origins) {
       let action = origins[origin];
+
       if (!action) {
         action = constants.NO_TRACKING;
       }
+
+      // adjust action names for error reporting
+      if (action == constants.USER_ALLOW) {
+        action = "usernoaction";
+      } else if (action == constants.USER_BLOCK) {
+        action = "userblock";
+      } else if (action == constants.USER_COOKIE_BLOCK) {
+        action = "usercookieblock";
+      }
+
       if (out[action]) {
         out[action] += ","+origin;
       } else {
@@ -397,7 +408,7 @@ function refreshPopup() {
 
   var printable = [];
   var nonTracking = [];
-  originsArr.sort(htmlUtils.compareReversedDomains);
+  originsArr = htmlUtils.sortDomains(originsArr);
   var trackerCount = 0;
 
   for (let i=0; i < originsArr.length; i++) {
