@@ -16,8 +16,8 @@ Here is a quick orientation to guide your adventure:
   and
   ["help wanted"](https://github.com/EFForg/privacybadger/labels/help%20wanted)
   labels.
-* When working on Privacy Badger's codebase,
-  please consult our [guide to setting up automated tests](/doc/tests.md).
+* When making changes to Privacy Badger's code, please consult our [developer](/doc/develop.md) and [automated testing](/doc/tests.md) guides.
+* When interacting with us, please remember to follow [EFF's Public Projects Code of Conduct](https://www.eff.org/pages/eppcode).
 * Security vulnerabilities can be reported privately to
   [vulnerabilities@eff.org](mailto:vulnerabilities@eff.org). Please see our
   [Security Vulnerability Disclosure Program](https://www.eff.org/security)
@@ -25,7 +25,6 @@ Here is a quick orientation to guide your adventure:
 <!---
 * This short overview of Privacy Badger's architecture can help put things in perspective.
 * Developer setup and debugging.
-* Documentation brought you this document.
 -->
 
 If you find something confusing or frustrating, please let us know!

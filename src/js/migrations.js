@@ -121,7 +121,7 @@ exports.Migrations= {
       actions = actionMap.getItemClones(),
       snitchMap = badger.storage.getBadgerStorageObject("snitch_map");
 
-    for (const domain in actions) {
+    for (let domain in actions) {
       const base = window.getBaseDomain(domain);
 
       if (!MISTAKES.has(base)) {
@@ -220,7 +220,7 @@ exports.Migrations= {
     const actionMap = badger.storage.getBadgerStorageObject("action_map"),
       actions = actionMap.getItemClones();
 
-    for (const domain in actions) {
+    for (let domain in actions) {
       const map = actions[domain];
       if (map.userAction == "" && map.heuristicAction == "") {
         actionMap.deleteItem(domain);
@@ -246,6 +246,19 @@ exports.Migrations= {
         cpn.webRTCIPHandlingPolicy.clear({});
       }
     });
+  },
+
+  enableShowNonTrackingDomains: function (badger) {
+    console.log("Enabling showNonTrackingDomains for some users");
+
+    let actionMap = badger.storage.getBadgerStorageObject("action_map"),
+      actions = actionMap.getItemClones();
+
+    // if we have any customized sliders
+    if (Object.keys(actions).some(domain => actions[domain].userAction != "")) {
+      // keep showing non-tracking domains in the popup
+      badger.getSettings().setItem("showNonTrackingDomains", true);
+    }
   },
 
 };

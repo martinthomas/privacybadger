@@ -35,20 +35,6 @@ function getPageScript() {
 
 }
 
-/**
- * Executes a script in the page DOM context
- */
-function insertPageScript(text) {
-  var parent = document.documentElement,
-    script = document.createElement('script');
-
-  script.text = text;
-  script.async = false;
-
-  parent.insertBefore(script, parent.firstChild);
-  parent.removeChild(script);
-}
-
 // END FUNCTION DEFINITIONS ///////////////////////////////////////////////////
 
 (function () {
@@ -64,10 +50,10 @@ if (document instanceof HTMLDocument === false && (
 
 // TODO race condition; fix waiting on https://crbug.com/478183
 chrome.runtime.sendMessage({
-  checkEnabled: true
+  checkDNT: true
 }, function (enabled) {
   if (enabled) {
-    insertPageScript(getPageScript());
+    window.injectScript(getPageScript());
   }
 });
 

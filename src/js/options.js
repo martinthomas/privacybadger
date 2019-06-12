@@ -15,9 +15,7 @@
  * along with Adblock Plus.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* globals getOriginsArray:false */
-
-// TODO: This code is a hideous mess and desperately needs to be refactored and cleaned up.
+window.OPTIONS_INITIALIZED = false;
 
 // TODO hack: disable Tooltipster tooltips on Firefox to avoid unresponsive script warnings
 (function () {
@@ -32,26 +30,14 @@ if (!matches || matches[1] == "Firefox") {
 
 const USER_DATA_EXPORT_KEYS = ["action_map", "snitch_map", "settings_map"];
 
-/**
- * TODO
- * @cooperq - 2016/12/05
- * This is a workaround for a bug in firefox 50.0.2 (no bugzilla id I could find)
- * This bug is fixed as of firefox 52.0 and the try/catch can be removed at that
- * time
- **/
-try {
-  var backgroundPage = chrome.extension.getBackgroundPage();
-} catch (e) {
-  location.reload();
-}
-var require = backgroundPage.require;
-var badger = backgroundPage.badger;
-var log = backgroundPage.log;
-var constants = backgroundPage.constants;
-var htmlUtils = require("htmlutils").htmlUtils;
-var i18n = chrome.i18n;
-var originCache = null;
-var settings = badger.storage.getBadgerStorageObject("settings_map");
+let i18n = chrome.i18n;
+
+let constants = require("constants");
+let { getOriginsArray } = require("optionslib");
+let htmlUtils = require("htmlutils").htmlUtils;
+let utils = require("utils");
+
+let OPTIONS_DATA = {};
 
 /*
  * Loads options from pb storage and sets UI elements accordingly.
@@ -63,11 +49,15 @@ function loadOptions() {
   // Add event listeners
   $("#whitelistForm").on("submit", addWhitelistDomain);
   $("#removeWhitelist").on("click", removeWhitelistDomain);
+  $("#cloud-upload").on("click", uploadCloud);
+  $("#cloud-download").on("click", downloadCloud);
   $('#importTrackerButton').on("click", loadFileChooser);
   $('#importTrackers').on("change", importTrackerList);
   $('#exportTrackers').on("click", exportUserData);
+  $('#resetData').on("click", resetData);
+  $('#removeAllData').on("click", removeAllData);
 
-  if (settings.getItem("showTrackingDomains")) {
+  if (OPTIONS_DATA.showTrackingDomains) {
     $('#tracking-domains-overlay').hide();
   } else {
     $('#blockedResourcesContainer').hide();
@@ -108,16 +98,23 @@ function loadOptions() {
   $(".refreshButton").button("option", "icons", {primary: "ui-icon-refresh"});
   $(".addButton").button("option", "icons", {primary: "ui-icon-plus"});
   $(".removeButton").button("option", "icons", {primary: "ui-icon-minus"});
+  $("#cloud-upload").button("option", "icons", {primary: "ui-icon-arrowreturnthick-1-n"});
+  $("#cloud-download").button("option", "icons", {primary: "ui-icon-arrowreturnthick-1-s"});
   $(".importButton").button("option", "icons", {primary: "ui-icon-plus"});
-  $(".exportButton").button("option", "icons", {primary: "ui-icon-extlink"});
+  $("#exportTrackers").button("option", "icons", {primary: "ui-icon-extlink"});
+  $("#resetData").button("option", "icons", {primary: "ui-icon-arrowrefresh-1-w"});
+  $("#removeAllData").button("option", "icons", {primary: "ui-icon-closethick"});
   $("#show_counter_checkbox").on("click", updateShowCounter);
-  $("#show_counter_checkbox").prop("checked", badger.showCounter());
-  $("#replace_social_widgets_checkbox").on("click", updateSocialWidgetReplacement);
-  $("#replace_social_widgets_checkbox").prop("checked", badger.isSocialWidgetReplacementEnabled());
+  $("#show_counter_checkbox").prop("checked", OPTIONS_DATA.showCounter);
+  $("#replace-widgets-checkbox")
+    .on("click", updateWidgetReplacement)
+    .prop("checked", OPTIONS_DATA.isWidgetReplacementEnabled);
+  $("#enable_dnt_checkbox").on("click", updateDNTCheckboxClicked);
+  $("#enable_dnt_checkbox").prop("checked", OPTIONS_DATA.isDNTSignalEnabled);
   $("#check_dnt_policy_checkbox").on("click", updateCheckingDNTPolicy);
-  $("#check_dnt_policy_checkbox").prop("checked", badger.isCheckingDNTPolicyEnabled());
+  $("#check_dnt_policy_checkbox").prop("checked", OPTIONS_DATA.isCheckingDNTPolicyEnabled).prop("disabled", !OPTIONS_DATA.isDNTSignalEnabled);
 
-  if (badger.webRTCAvailable) {
+  if (OPTIONS_DATA.webRTCAvailable) {
     $("#toggle_webrtc_mode").on("click", toggleWebRTCIPProtection);
 
     chrome.privacy.network.webRTCIPHandlingPolicy.get({}, result => {
@@ -137,14 +134,25 @@ function loadOptions() {
 
   $("#learn-in-incognito-checkbox")
     .on("click", updateLearnInIncognito)
-    .prop("checked", badger.isLearnInIncognitoEnabled());
+    .prop("checked", OPTIONS_DATA.isLearnInIncognitoEnabled);
+
+  $('#show-nontracking-domains-checkbox')
+    .on("click", (event) => {
+      let showNonTrackingDomains = $(event.currentTarget).prop("checked");
+      chrome.runtime.sendMessage({
+        type: "updateSettings",
+        data: { showNonTrackingDomains }
+      });
+    })
+    .prop("checked", OPTIONS_DATA.showNonTrackingDomains);
 
   reloadWhitelist();
   reloadTrackingDomainsTab();
 
   $('html').css('visibility', 'visible');
+
+  window.OPTIONS_INITIALIZED = true;
 }
-$(loadOptions);
 
 /**
  * Opens the file chooser to allow a user to select
@@ -202,12 +210,66 @@ function parseUserDataFile(storageMapsList) {
   chrome.runtime.sendMessage({
     type: "mergeUserData",
     data: lists
-  }, () => {
-    // Update list to reflect new status of map
+  }, (response) => {
+    OPTIONS_DATA.disabledSites = response.disabledSites;
+    OPTIONS_DATA.origins = response.origins;
+
     reloadWhitelist();
     reloadTrackingDomainsTab();
+
     confirm(i18n.getMessage("import_successful"));
   });
+}
+
+function resetData() {
+  var resetWarn = i18n.getMessage("reset_data_confirm");
+  if (confirm(resetWarn)) {
+    chrome.runtime.sendMessage({type: "resetData"}, () => {
+      // reload page to refresh tracker list
+      location.reload();
+    });
+  }
+}
+
+function removeAllData() {
+  var removeWarn = i18n.getMessage("remove_all_data_confirm");
+  if (confirm(removeWarn)) {
+    chrome.runtime.sendMessage({type: "removeAllData"}, () => {
+      location.reload();
+    });
+  }
+}
+
+function downloadCloud() {
+  chrome.runtime.sendMessage({type: "downloadCloud"},
+    function (response) {
+      if (response.success) {
+        alert(i18n.getMessage("download_cloud_success"));
+        OPTIONS_DATA.disabledSites = response.disabledSites;
+        reloadWhitelist();
+      } else {
+        console.error("Cloud sync error:", response.message);
+        if (response.message === i18n.getMessage("download_cloud_no_data")) {
+          alert(response.message);
+        } else {
+          alert(i18n.getMessage("download_cloud_failure"));
+        }
+      }
+    }
+  );
+}
+
+function uploadCloud() {
+  chrome.runtime.sendMessage({type: "uploadCloud"},
+    function (status) {
+      if (status.success) {
+        alert(i18n.getMessage("upload_cloud_success"));
+      } else {
+        console.error("Cloud sync error:", status.message);
+        alert(i18n.getMessage("upload_cloud_failure"));
+      }
+    }
+  );
 }
 
 /**
@@ -296,24 +358,43 @@ function updateShowCounter() {
     // Refresh display for each tab's PB badge.
     chrome.tabs.query({}, function(tabs) {
       tabs.forEach(function(tab) {
-        badger.updateBadge(tab.id);
+        chrome.runtime.sendMessage({
+          type: "updateBadge",
+          tab_id: tab.id
+        });
       });
     });
   });
 }
 
 /**
- * Update setting for whether or not to replace social widgets.
+ * Update setting for whether or not to replace
+ * social buttons/video players/commenting widgets.
  */
-function updateSocialWidgetReplacement() {
-  const enabled = $("#replace_social_widgets_checkbox").prop("checked");
+function updateWidgetReplacement() {
+  const socialWidgetReplacementEnabled = $("#replace-widgets-checkbox").prop("checked");
+
+  chrome.runtime.sendMessage({
+    type: "updateSettings",
+    data: { socialWidgetReplacementEnabled }
+  });
+}
+
+/**
+ * Update DNT checkbox clicked
+ */
+function updateDNTCheckboxClicked() {
+  const enabled = $("#enable_dnt_checkbox").prop("checked");
 
   chrome.runtime.sendMessage({
     type: "updateSettings",
     data: {
-      socialWidgetReplacementEnabled: enabled
+      sendDNTSignal: enabled
     }
   });
+
+  $("#check_dnt_policy_checkbox").prop("checked", enabled).prop("disabled", !enabled);
+  updateCheckingDNTPolicy();
 }
 
 function updateCheckingDNTPolicy() {
@@ -324,8 +405,6 @@ function updateCheckingDNTPolicy() {
     data: {
       checkForDNTPolicy: enabled
     }
-  }, () => {
-    reloadTrackingDomainsTab(); // This setting means sites need to be re-evaluated
   });
 }
 
@@ -339,7 +418,7 @@ function updateLearnInIncognito() {
 }
 
 function reloadWhitelist() {
-  var sites = settings.getItem("disabledSites");
+  var sites = OPTIONS_DATA.disabledSites;
   var sitesList = $('#excludedDomainsBox');
   // Sort the white listed sites in the same way the blocked sites are
   sites = htmlUtils.sortDomains(sites);
@@ -349,17 +428,10 @@ function reloadWhitelist() {
   }
 }
 
-/**
- * Refreshes cached origins.
- */
-function refreshOriginCache() {
-  originCache = getOrigins();
-}
-
 function addWhitelistDomain(event) {
   event.preventDefault();
 
-  var domain = backgroundPage.utils.getHostFromDomainInput(
+  var domain = utils.getHostFromDomainInput(
     document.getElementById("newWhitelistDomain").value.replace(/\s/g, "")
   );
 
@@ -367,81 +439,64 @@ function addWhitelistDomain(event) {
     return confirm(i18n.getMessage("invalid_domain"));
   }
 
-  badger.disablePrivacyBadgerForOrigin(domain);
-
-  reloadWhitelist();
-  document.getElementById("newWhitelistDomain").value = "";
+  chrome.runtime.sendMessage({
+    type: "disablePrivacyBadgerForOrigin",
+    domain
+  }, (response) => {
+    OPTIONS_DATA.disabledSites = response.disabledSites;
+    reloadWhitelist();
+    document.getElementById("newWhitelistDomain").value = "";
+  });
 }
 
 function removeWhitelistDomain(event) {
   event.preventDefault();
-  var selected = $(document.getElementById("excludedDomainsBox")).find('option:selected');
-  for (var i = 0; i < selected.length; i++) {
-    badger.enablePrivacyBadgerForOrigin(selected[i].text);
+
+  let domains = [];
+  let $selected = $("#excludedDomainsBox option:selected");
+  for (let i = 0; i < $selected.length; i++) {
+    domains.push($selected[i].text);
   }
-  reloadWhitelist();
+
+  chrome.runtime.sendMessage({
+    type: "enablePrivacyBadgerForOriginList",
+    domains
+  }, (response) => {
+    OPTIONS_DATA.disabledSites = response.disabledSites;
+    reloadWhitelist();
+  });
 }
 
 // Tracking Domains slider functions
-
-/**
- * Gets all encountered origins with associated actions.
- * @return {Object}
- */
-function getOrigins() {
-  var origins = {};
-  var action_map = badger.storage.getBadgerStorageObject('action_map');
-  for (var domain in action_map.getItemClones()) {
-    var action = badger.storage.getBestAction(domain);
-    // Do not show non tracking origins
-    if (action != constants.NO_TRACKING) {
-      origins[domain] = action;
-    }
-  }
-  return origins;
-}
 
 /**
  * Gets action for given origin.
  * @param {String} origin - Origin to get action for.
  */
 function getOriginAction(origin) {
-  // Check to see if cached origins need to be set.
-  if (! originCache) {
-    refreshOriginCache();
-  }
-
-  return originCache[origin];
+  return OPTIONS_DATA.origins[origin];
 }
 
-//TODO unduplicate this code? since it's also in popup
 function revertDomainControl(e) {
   var $elm = $(e.target).parent();
-  log('revert to privacy badger control for', $elm);
   var origin = $elm.data('origin');
-  badger.storage.revertUserAction(origin);
-  var defaultAction = badger.storage.getBestAction(origin);
-  var selectorId = "#"+ defaultAction +"-" + origin.replace(/\./g,'-');
-  var selector = $(selectorId);
-  log('selector', selector);
-  selector.click();
-  $elm.removeClass('userset');
-  reloadTrackingDomainsTab(origin);
-  return false;
+  chrome.runtime.sendMessage({
+    type: "revertDomainControl",
+    origin
+  }, (response) => {
+    OPTIONS_DATA.origins = response.origins;
+    reloadTrackingDomainsTab(origin);
+  });
 }
 
 /**
  * Displays list of all tracking domains along with toggle controls.
  */
 function reloadTrackingDomainsTab() {
-  refreshOriginCache();
-
   // Check to see if any tracking domains have been found before continuing.
-  var allTrackingDomains = getOriginsArray(originCache);
+  var allTrackingDomains = getOriginsArray(OPTIONS_DATA.origins);
   if (!allTrackingDomains || allTrackingDomains.length === 0) {
     // leave out number of trackers and slider instructions message if no sliders will be displayed
-    $("#pb_has_detected").hide();
-    $("#count").hide();
     $("#options_domain_list_trackers").hide();
     $("#options_domain_list_one_tracker").hide();
 
@@ -461,18 +516,19 @@ function reloadTrackingDomainsTab() {
   $("#tracking-domains-div").show();
 
   // Update messages according to tracking domain count.
-  if (allTrackingDomains.length === 1) {
+  if (allTrackingDomains.length == 1) {
     // leave out messages about multiple trackers
-    $("#pb_has_detected").hide();
-    $("#count").hide();
     $("#options_domain_list_trackers").hide();
 
     // show singular "tracker" message
     $("#options_domain_list_one_tracker").show();
   } else {
-    $("#pb_has_detected").show();
-    $("#count").text(allTrackingDomains.length).show();
-    $("#options_domain_list_trackers").show();
+    $("#options_domain_list_trackers").html(i18n.getMessage(
+      "options_domain_list_trackers", [
+        allTrackingDomains.length,
+        "<a target='_blank' title='" + _.escape(i18n.getMessage("what_is_a_tracker")) + "' class='tooltip' href='https://www.eff.org/privacybadger/faq#What-is-a-third-party-tracker'>"
+      ]
+    )).show();
   }
 
   // Get containing HTML for domain list along with toggle legend icons.
@@ -484,14 +540,12 @@ function reloadTrackingDomainsTab() {
   // Display tracking domains.
   showTrackingDomains(
     getOriginsArray(
-      originCache,
+      OPTIONS_DATA.origins,
       $("#trackingDomainSearch").val(),
       $('#tracking-domains-type-filter').val(),
       $('#tracking-domains-status-filter').val()
     )
   );
-
-  log("Done refreshing tracking domains tab");
 }
 
 /**
@@ -521,7 +575,7 @@ function filterTrackingDomains() {
 
     // Show filtered origins.
     var filteredOrigins = getOriginsArray(
-      originCache,
+      OPTIONS_DATA.origins,
       searchText,
       $typeFilter.val(),
       $statusFilter.val()
@@ -561,7 +615,8 @@ function registerToggleHandlers($toggleElement) {
         type: "saveOptionsToggle",
         action: setting,
         origin: origin
-      }, () => {
+      }, (response) => {
+        OPTIONS_DATA.origins = response.origins;
         reloadTrackingDomainsTab();
       });
     },
@@ -607,7 +662,6 @@ function showTrackingDomains(domains) {
   var trackingDetails = '';
   for (var i = 0; (i < 50) && (domains.length > 0); i++) {
     var trackingDomain = domains.shift();
-    // todo: gross hack, use templating framework
     var action = getOriginAction(trackingDomain);
     if (action) {
       trackingDetails += htmlUtils.getOriginHtml(trackingDomain, action, action == constants.DNT);
@@ -639,7 +693,7 @@ function showTrackingDomains(domains) {
  */
 function toggleWebRTCIPProtection() {
   // Return early with non-supporting browsers
-  if (!badger.webRTCAvailable) {
+  if (!OPTIONS_DATA.webRTCAvailable) {
     return;
   }
 
@@ -667,7 +721,6 @@ function toggleWebRTCIPProtection() {
 function updateOrigin(event) {
   // get the origin and new action for it
   var $elm = $('label[for="' + event.currentTarget.id + '"]');
-  log('updating origin for', $elm);
   var action = $elm.data('action');
 
   // replace the old action with the new one
@@ -706,7 +759,17 @@ function removeOrigin(event) {
   chrome.runtime.sendMessage({
     type: "removeOrigin",
     origin: origin
-  }, () => {
+  }, (response) => {
+    OPTIONS_DATA.origins = response.origins;
     reloadTrackingDomainsTab();
   });
 }
+
+$(function () {
+  chrome.runtime.sendMessage({
+    type: "getOptionsData",
+  }, (response) => {
+    OPTIONS_DATA = response;
+    loadOptions();
+  });
+});
