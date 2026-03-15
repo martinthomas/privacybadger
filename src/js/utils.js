@@ -1,9 +1,6 @@
 /*
- * This file is part of Privacy Badger <https://www.eff.org/privacybadger>
+ * This file is part of Privacy Badger <https://privacybadger.org/>
  * Copyright (C) 2014 Electronic Frontier Foundation
- *
- * Derived from Adblock Plus
- * Copyright (C) 2006-2013 Eyeo GmbH
  *
  * Privacy Badger is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 3 as
@@ -18,130 +15,206 @@
  * along with Privacy Badger.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* globals URI:false */
+import { extractHostFromURL, isThirdParty, getBaseDomain } from "../lib/basedomain.js";
 
-require.scopes.utils = (function() {
+import mdfp from "./multiDomainFirstParties.js";
+
+// TODO replace with Object.hasOwn() eventually
+// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/hasOwn
+function hasOwn(obj, prop) {
+  return Object.prototype.hasOwnProperty.call(obj, prop);
+}
 
 /**
- * Generic interface to make an XHR request
+ * Generic interface to make requests.
  *
- * @param {String} url The url to get
- * @param {Function} callback The callback to call after request has finished
- * @param {String} method GET/POST
- * @param {Object} opts XMLHttpRequest options
+ * @param {String} url the URL to get
+ * @param {Function} callback the callback ({String?} error, {String?} response body text)
  */
-function xhrRequest(url, callback, method, opts) {
-  if (!method) {
-    method = "GET";
-  }
-  var xhr = new XMLHttpRequest();
-  if (opts) {
-    _.each(opts, function (value, key) {
-      xhr[key] = value;
-    });
-  }
-  xhr.onload = function () {
-    if (xhr.status == 200) {
-      callback(null, xhr.response);
-    } else {
-      var error = {
-        status: xhr.status,
-        message: xhr.response,
-        object: xhr
-      };
-      callback(error, error.message);
+function fetchResource(url, callback) {
+  let options = {
+    credentials: "omit",
+    redirect: "error"
+  };
+
+  fetch(url, options).then(response => {
+    if (!response.ok) {
+      throw new Error("Non-2xx response status: " + response.status);
     }
-  };
-  // triggered by network problems
-  xhr.onerror = function () {
-    callback({ status: 0, message: "", object: xhr }, "");
-  };
-  xhr.open(method, url, true);
-  xhr.send();
+    return response.text();
+
+  }).then(data => {
+    // success
+    callback(null, data);
+
+  }).catch(error => {
+    callback(error, null);
+  });
 }
 
 /**
- * Converts binary data to base64-encoded text suitable for use in data URIs.
+ * Splits a given FQDN into an array of FQDNs present inside the FQDN,
+ * ordered from the FQDN itself down to the eTLD+1.
  *
- * Adapted from https://stackoverflow.com/a/9458996.
+ * For example: ['a.b.eff.org', 'b.eff.org', 'eff.org']
  *
- * @param {ArrayBuffer} buffer binary data
- *
- * @returns {String} base64-encoded text
- */
-function arrayBufferToBase64(buffer) {
-  var binary = '';
-  var bytes = new Uint8Array(buffer);
-  var len = bytes.byteLength;
-  for (var i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
-/**
- * Return an array of all subdomains in an FQDN, ordered from the FQDN to the
- * eTLD+1. e.g. [a.b.eff.org, b.eff.org, eff.org]
- * if 'all' is passed in then the array will include all domain levels, not
- * just down to the base domain
  * @param {String} fqdn the domain to split
- * @param {boolean} all whether to include all domain levels
- * @returns {Array} the subdomains
+ * @param {Boolean} [all] whether to go past eTLD+1: ['bbc.co.uk', 'co.uk', 'uk']
+ *
+ * @returns {Array}
  */
 function explodeSubdomains(fqdn, all) {
-  var baseDomain;
+  let subdomains = [],
+    base_domain,
+    dot = -1,
+    piece;
+
   if (all) {
-    baseDomain = fqdn.split('.').pop();
+    base_domain = fqdn.slice(fqdn.lastIndexOf('.') + 1);
   } else {
-    baseDomain = window.getBaseDomain(fqdn);
+    base_domain = getBaseDomain(fqdn);
   }
-  var baseLen = baseDomain.split('.').length;
-  var parts = fqdn.split('.');
-  var numLoops = parts.length - baseLen;
-  var subdomains = [];
-  for (var i=0; i<=numLoops; i++) {
-    subdomains.push(parts.slice(i).join('.'));
+
+  for (;;) {
+    piece = fqdn.slice(dot + 1);
+    subdomains.push(piece);
+    if (base_domain == piece) {
+      break;
+    }
+    dot = fqdn.indexOf('.', dot + 1);
+    if (dot < 0) {
+      break;
+    }
   }
+
   return subdomains;
 }
 
 /*
- * Estimate the max possible entropy of str using min and max
- * char codes observed in the string.
- * Tends to overestimate in many cases, e.g. hexadecimals.
- * Also, sensitive to case, e.g. bad1dea is different than BAD1DEA
+ * Estimates the max possible entropy of string.
+ *
+ * @param {String} str the string to compute entropy for
+ * @returns {Number} bits of entropy
  */
 function estimateMaxEntropy(str) {
-  /*
-   * Don't process item + key's longer than LOCALSTORAGE_MAX_LEN_FOR_ENTROPY_EST.
-   * Note that default quota for local storage is 5MB and
-   * storing fonts, scripts or images in for local storage for
-   * performance is not uncommon. We wouldn't want to estimate entropy
-   * for 5M chars.
-   */
-  var MAX_LS_LEN_FOR_ENTROPY_EST = 256;
+  // Don't process strings longer than MAX_LS_LEN_FOR_ENTROPY_EST.
+  // Note that default quota for local storage is 5MB and
+  // storing fonts, scripts or images in for local storage for
+  // performance is not uncommon. We wouldn't want to estimate entropy
+  // for 5M chars.
+  const MAX_LS_LEN_FOR_ENTROPY_EST = 256;
+
+  // common classes of characters that a string might belong to
+  const SEPS = "._-x";
+  const BIN = "01";
+  const DEC = "0123456789";
+
+  // these classes are case-insensitive
+  const HEX = "abcdef" + DEC;
+  const ALPHA = "abcdefghijklmnopqrstuvwxyz";
+  const ALPHANUM = ALPHA + DEC;
+
+  // these classes are case-sensitive
+  const B64 = ALPHANUM + ALPHA.toUpperCase() + "/+";
+  const URL = ALPHANUM + ALPHA.toUpperCase() + "~%";
 
   if (str.length > MAX_LS_LEN_FOR_ENTROPY_EST) {
-    /*
-     * Just return a higher-than-threshold entropy estimate.
-     * We assume 1 bit per char, which will be well over the
-     * threshold (33 bits).
-     */
+    // Just return a higher-than-threshold entropy estimate.
+    // We assume 1 bit per char, which will be well over the
+    // threshold (33 bits).
     return str.length;
   }
 
-  var charCodes = Array.prototype.map.call(str, function (ch) {
-    return String.prototype.charCodeAt.apply(ch);
-  });
-  var minCharCode = Math.min.apply(Math, charCodes);
-  var maxCharCode = Math.max.apply(Math, charCodes);
-  // Guess the # of possible symbols, e.g. for 0101 it'd be 2.
-  var maxSymbolsGuess = maxCharCode - minCharCode + 1;
-  var maxCombinations = Math.pow(maxSymbolsGuess, str.length);
-  var maxBits = Math.log(maxCombinations)/Math.LN2;
-  /* console.log("Local storage item length:", str.length, "# symbols guess:", maxSymbolsGuess,
-    "Max # Combinations:", maxCombinations, "Max bits:", maxBits) */
-  return maxBits; // May return Infinity when the content is too long.
+  let max_symbols;
+
+  // If all characters are upper or lower case, don't consider case when
+  // computing entropy.
+  let sameCase = (str.toLowerCase() == str) || (str.toUpperCase() == str);
+  if (sameCase) {
+    str = str.toLowerCase();
+  }
+
+  // If all the characters come from one of these common character groups,
+  // assume that the group is the domain of possible characters.
+  for (let chr_class of [BIN, DEC, HEX, ALPHA, ALPHANUM, B64, URL]) {
+    let group = chr_class + SEPS;
+    // Ignore separator characters when computing entropy. For example, Google
+    // Analytics IDs look like "14103492.1964907".
+
+    // flag to check if each character of input string belongs to the group in question
+    let each_char_in_group = true;
+
+    for (let ch of str) {
+      if (!group.includes(ch)) {
+        each_char_in_group = false;
+        break;
+      }
+    }
+
+    // if the flag resolves to true, we've found our culprit and can break out of the loop
+    if (each_char_in_group) {
+      max_symbols = chr_class.length;
+      break;
+    }
+  }
+
+  // If there's not an obvious class of characters, use the heuristic
+  // "max char code - min char code"
+  if (!max_symbols) {
+    let charCodes = Array.prototype.map.call(str, function (ch) {
+      return String.prototype.charCodeAt.apply(ch);
+    });
+    let min_char_code = Math.min.apply(Math, charCodes);
+    let max_char_code = Math.max.apply(Math, charCodes);
+    max_symbols = max_char_code - min_char_code + 1;
+  }
+
+  // the entropy is (entropy per character) * (number of characters)
+  let max_bits = (Math.log(max_symbols) / Math.LN2) * str.length;
+
+  return max_bits;
+}
+
+// Adapted from https://gist.github.com/jaewook77/cd1e3aa9449d7ea4fb4f
+// Find all common substrings more than 8 characters long, using DYNAMIC
+// PROGRAMMING
+function findCommonSubstrings(str1, str2) {
+  /*
+   Let D[i,j] be the length of the longest matching string suffix between
+   str1[1]..str1[i] and a segment of str2 between str2[1]..str2[j].
+   If the ith character in str1 doesn’t match the jth character in str2, then
+   D[i,j] is zero to indicate that there is no matching suffix
+   */
+
+  // we only care about strings >= 8 chars
+  let D = [], LCS = [], LCS_MIN = 8;
+
+  // runs in O(M x N) time!
+  for (let i = 0; i < str1.length; i++) {
+    D[i] = [];
+    for (let j = 0; j < str2.length; j++) {
+      if (str1[i] == str2[j]) {
+        if (i == 0 || j == 0) {
+          D[i][j] = 1;
+        } else {
+          D[i][j] = D[i-1][j-1] + 1;
+        }
+
+        // store all common substrings longer than the minimum length
+        if (D[i][j] == LCS_MIN) {
+          LCS.push(str1.substring(i-D[i][j]+1, i+1));
+        } else if (D[i][j] > LCS_MIN) {
+          // remove the shorter substring and add the new, longer one
+          LCS.pop();
+          LCS.push(str1.substring(i-D[i][j]+1, i+1));
+        }
+      } else {
+        D[i][j] = 0;
+      }
+    }
+  }
+
+  return LCS;
 }
 
 function oneSecond() {
@@ -169,6 +242,60 @@ function oneDayFromNow() {
 }
 
 /**
+ * @param {Number} min
+ * @param {Number} max
+ *
+ * @also
+ *
+ * @param {Number} max
+ *
+ * @returns {Number} integer between min and max,
+ *  or between 0 and max when called with one parameter
+ */
+function random(min, max) {
+  if (max === undefined) {
+    max = min;
+    min = 0;
+  }
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+// from Underscore v1.6.0
+// also lives in js/contentscripts/fingerprinting.js
+function debounce(func, wait, immediate) {
+  var timeout, args, context, timestamp, result;
+
+  var later = function () {
+    var last = Date.now() - timestamp;
+    if (last < wait) {
+      timeout = setTimeout(later, wait - last);
+    } else {
+      timeout = null;
+      if (!immediate) {
+        result = func.apply(context, args);
+        context = args = null;
+      }
+    }
+  };
+
+  return function () {
+    context = this; // eslint-disable-line consistent-this
+    args = arguments;
+    timestamp = Date.now();
+    var callNow = immediate && !timeout;
+    if (!timeout) {
+      timeout = setTimeout(later, wait);
+    }
+    if (callNow) {
+      result = func.apply(context, args);
+      context = args = null;
+    }
+
+    return result;
+  };
+}
+
+/**
  * Creates a rate-limited function that delays invoking `fn` until after
  * `interval` milliseconds have elapsed since the last time the rate-limited
  * function was invoked.
@@ -179,7 +306,7 @@ function oneDayFromNow() {
  * http://stackoverflow.com/questions/23072815/throttle-javascript-function-calls-but-with-queuing-dont-discard-calls
  *
  * @param {Function} fn The function to rate-limit.
- * @param {number} interval The number of milliseconds to rate-limit invocations to.
+ * @param {Number} interval The number of milliseconds to rate-limit invocations to.
  * @param {Object} context The context object (optional).
  * @returns {Function} Returns the new rate-limited function.
  */
@@ -219,7 +346,10 @@ function rateLimit(fn, interval, context) {
   return limited;
 }
 
-function buf2hex(buffer) { // buffer is an ArrayBuffer
+/**
+ * @param {ArrayBuffer} buffer
+ */
+function buf2hex(buffer) {
   return Array.prototype.map.call(new Uint8Array(buffer), x => ('00' + x.toString(16)).slice(-2)).join('');
 }
 
@@ -232,12 +362,10 @@ function sha1(input, callback) {
   });
 }
 
-function parseCookie(str, opts) {
-  if (!str) {
+function parseCookie(cookie_str, opts = {}) {
+  if (!cookie_str) {
     return {};
   }
-
-  opts = opts || {};
 
   let COOKIE_ATTRIBUTES = [
     "domain",
@@ -245,11 +373,12 @@ function parseCookie(str, opts) {
     "httponly",
     "max-age",
     "path",
+    "samesite",
     "secure",
   ];
 
   let parsed = {},
-    cookies = str.replace(/\n/g, ";").split(";");
+    cookies = cookie_str.replace(/\n/g, ";").split(";");
 
   for (let i = 0; i < cookies.length; i++) {
     let cookie = cookies[i],
@@ -303,7 +432,7 @@ function parseCookie(str, opts) {
       }
     }
 
-    if (!opts.noOverwrite || !parsed.hasOwnProperty(name)) {
+    if (!opts.noOverwrite || !hasOwn(parsed, name)) {
       parsed[name] = value;
     }
   }
@@ -311,41 +440,186 @@ function parseCookie(str, opts) {
   return parsed;
 }
 
+/**
+ * Validates and normalizes user input for a domain list form field.
+ *
+ * @param {String} input user form input text
+ *
+ * @returns {(String|Boolean)} `false` if the input fails URL parsing,
+ * otherwise the URL host
+ */
 function getHostFromDomainInput(input) {
-  if (!input.startsWith("http")) {
+  if (input.startsWith('*')) {
+    input = input.slice(1);
+    if (input.startsWith('.')) {
+      input = input.slice(1);
+    }
+  }
+
+  if (!input.startsWith("http://") && !input.startsWith("https://")) {
     input = "http://" + input;
   }
 
-  if (!input.endsWith("/")) {
-    input += "/";
-  }
+  let url;
 
   try {
-    var uri = new URI(input);
+    url = new URL(input);
   } catch (err) {
     return false;
   }
 
-  return uri.host;
+  return url.hostname;
 }
 
-/************************************** exports */
-var exports = {
-  arrayBufferToBase64,
+/**
+ * check if a domain is third party
+ * @param {String} domain1 an fqdn
+ * @param {String} domain2 a second fqdn
+ *
+ * @return {Boolean} true if the domains are third party
+ */
+function isThirdPartyDomain(domain1, domain2) {
+  if (isThirdParty(domain1, domain2)) {
+    return !mdfp.isMultiDomainFirstParty(
+      getBaseDomain(domain1),
+      getBaseDomain(domain2)
+    );
+  }
+  return false;
+}
+
+/**
+ * Checks whether a given site hostname matches
+ * any first party protections content scripts.
+ *
+ * @param {String} tab_host
+ * @return {Boolean}
+ */
+let firstPartyProtectionsEnabled = (function () {
+  let firstPartiesList;
+
+  function getFirstParties() {
+    let manifestJson = chrome.runtime.getManifest();
+    let firstParties = [];
+
+    for (let contentScriptObj of manifestJson.content_scripts) {
+      // only include parts from content scripts that have firstparties entries
+      if (contentScriptObj.js[0].includes("/firstparties/")) {
+        let extractedUrls = [];
+        for (let match of contentScriptObj.matches) {
+          extractedUrls.push(extractHostFromURL(match));
+        }
+        firstParties.push(extractedUrls);
+      }
+    }
+    return [].concat.apply([], firstParties);
+  }
+
+  return function (tab_host) {
+    if (!firstPartiesList) {
+      firstPartiesList = getFirstParties();
+    }
+
+    for (let url_pattern of firstPartiesList) {
+      if (url_pattern.startsWith("*")) {
+        if (tab_host.endsWith(url_pattern.slice(1))) {
+          return true;
+        }
+      } else if (url_pattern == tab_host) {
+        return true;
+      }
+    }
+    return false;
+  };
+})();
+
+/**
+ * Checks whether a given URL is a special browser page.
+ * TODO account for browser-specific pages:
+ * https://github.com/hackademix/noscript/blob/a8b35486571933043bb62e90076436dff2a34cd2/src/lib/restricted.js
+ *
+ * @param {String} url
+ *
+ * @return {Boolean} whether the URL is restricted
+ */
+function isRestrictedUrl(url) {
+  if (!url) {
+    return true;
+  }
+  // permitted schemes from
+  // https://developer.chrome.com/extensions/match_patterns
+  return !(
+    url.startsWith('http') || url.startsWith('file') || url.startsWith('ftp')
+  );
+}
+
+function difference(arr1 = [], arr2 = []) {
+  return arr1.filter(x => !arr2.includes(x));
+}
+
+/**
+ * @param {Array} [arr1=[]]
+ * @param {Array} [arr2=[]]
+ *
+ * @returns {Array} items from arr1 followed by items from arr2
+ *  that were not already present in arr1
+ */
+function concatUniq(arr1 = [], arr2 = []) {
+  return arr1.concat(arr2.filter(x => !arr1.includes(x)));
+}
+
+/**
+ * Array.prototype.filter() for objects.
+ *
+ * @param {Object} obj
+ * @param {Function} cb receives two arguments: current value, current key
+ */
+function filter(obj, cb) {
+  let memo = {};
+  for (let [key, value] of Object.entries(obj)) {
+    if (cb(value, key)) {
+      memo[key] = value;
+    }
+  }
+  return memo;
+}
+
+let utils = {
+  concatUniq,
+  debounce,
+  difference,
   estimateMaxEntropy,
   explodeSubdomains,
+  fetchResource,
+  filter,
+  findCommonSubstrings,
+  firstPartyProtectionsEnabled,
   getHostFromDomainInput,
+  hasOwn,
+  isRestrictedUrl,
+  isThirdPartyDomain,
   nDaysFromNow,
-  oneDayFromNow,
   oneDay,
+  oneDayFromNow,
   oneHour,
   oneMinute,
   oneSecond,
   parseCookie,
+  random,
   rateLimit,
   sha1,
-  xhrRequest,
 };
-return exports;
-/************************************** exports */
-})(); //require scopes
+
+utils.isObject = function (obj) {
+  let type = typeof obj;
+  return type === 'function' || type === 'object' && !!obj;
+};
+
+// isFunction(), isString(), etc.
+for (let name of ['Arguments', 'Function', 'String', 'Number', 'Date', 'RegExp', 'Error', 'Symbol', 'Map', 'WeakMap', 'Set', 'WeakSet']) {
+  utils['is' + name] = function (x) {
+    return toString.call(x) === '[object ' + name + ']';
+  };
+}
+
+export default utils;

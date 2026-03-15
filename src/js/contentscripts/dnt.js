@@ -1,5 +1,5 @@
 /*
- * This file is part of Privacy Badger <https://www.eff.org/privacybadger>
+ * This file is part of Privacy Badger <https://privacybadger.org/>
  * Copyright (C) 2018 Electronic Frontier Foundation
  *
  * Privacy Badger is free software: you can redistribute it and/or modify
@@ -15,28 +15,6 @@
  * along with Privacy Badger.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-function getPageScript() {
-
-  // code below is not a content script: no chrome.* APIs /////////////////////
-
-  // return a string
-  return "(" + function (NAVIGATOR, OBJECT) {
-
-    OBJECT.defineProperty(OBJECT.getPrototypeOf(NAVIGATOR), "doNotTrack", {
-      get: () => {
-        return "1";
-      }
-    });
-
-  // save locally to keep from getting overwritten by site code
-  } + "(window.navigator, Object));";
-
-  // code above is not a content script: no chrome.* APIs /////////////////////
-
-}
-
-// END FUNCTION DEFINITIONS ///////////////////////////////////////////////////
-
 (function () {
 
 // don't inject into non-HTML documents (such as XML documents)
@@ -48,9 +26,48 @@ if (document instanceof HTMLDocument === false && (
   return;
 }
 
+function getPageScript() {
+
+  // code below is not a content script: no chrome.* APIs /////////////////////
+
+  // return a string
+  return "(" + function () {
+
+    if (window.navigator.doNotTrack != "1") {
+      Object.defineProperty(window.Navigator.prototype, "doNotTrack", {
+        get: function doNotTrack() {
+          return "1";
+        },
+        configurable: true,
+        enumerable: true
+      });
+    }
+
+    if (!window.navigator.globalPrivacyControl) {
+      try {
+        Object.defineProperty(window.Navigator.prototype, "globalPrivacyControl", {
+          get: function globalPrivacyControl() {
+            return true;
+          },
+          configurable: true,
+          enumerable: true
+        });
+      } catch (e) {
+        console.error("Privacy Badger failed to set navigator.globalPrivacyControl, probably because another extension set it in an incompatible way first.");
+      }
+    }
+
+  } + "());";
+
+  // code above is not a content script: no chrome.* APIs /////////////////////
+
+}
+
+// END FUNCTION DEFINITIONS ///////////////////////////////////////////////////
+
 // TODO race condition; fix waiting on https://crbug.com/478183
 chrome.runtime.sendMessage({
-  checkDNT: true
+  type: "checkDNT"
 }, function (enabled) {
   if (enabled) {
     window.injectScript(getPageScript());

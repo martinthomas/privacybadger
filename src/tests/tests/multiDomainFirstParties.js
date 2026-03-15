@@ -1,8 +1,8 @@
-(function () {
+import { getBaseDomain } from "../../lib/basedomain.js";
+
+import mdfp from "../../js/multiDomainFirstParties.js";
 
 QUnit.module("Multi-domain first parties");
-
-let mdfp = require('multiDomainFP');
 
 QUnit.test('isMultiDomainFirstParty test', function (assert) {
   let testData = [
@@ -49,11 +49,23 @@ QUnit.test('MDFP domains are all base domains', (assert) => {
   for (let group of mdfp.multiDomainFirstPartiesArray) {
     for (let domain of group) {
       assert.ok(
-        window.getBaseDomain('fakesubdomain.' + domain) == domain,
+        getBaseDomain('fakesubdomain.' + domain) == domain,
         domain + ' is a base domain (eTLD+1)'
       );
     }
   }
 });
 
-}());
+// lint for duplicates
+QUnit.test('MDFP domains do not contain duplicates', (assert) => {
+  let domains = new Set();
+  for (let group of mdfp.multiDomainFirstPartiesArray) {
+    for (let domain of group) {
+      assert.notOk(
+        domains.has(domain),
+        domain + ' does not appear more than once'
+      );
+      domains.add(domain);
+    }
+  }
+});

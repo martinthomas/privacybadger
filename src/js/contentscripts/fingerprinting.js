@@ -1,5 +1,5 @@
 /*
- * This file is part of Privacy Badger <https://www.eff.org/privacybadger>
+ * This file is part of Privacy Badger <https://privacybadger.org/>
  * Copyright (C) 2015 Electronic Frontier Foundation
  *
  * Derived from Chameleon <https://github.com/ghostwords/chameleon>
@@ -18,36 +18,52 @@
  * along with Privacy Badger.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-function getFpPageScript() {
+(function () {
+
+// don't inject into non-HTML documents (such as XML documents)
+// but do inject into XHTML documents
+if (document instanceof HTMLDocument === false && (
+  document instanceof XMLDocument === false ||
+  document.createElement('div') instanceof HTMLDivElement === false
+)) {
+  return;
+}
+
+function getPageScript(event_id) {
 
   // code below is not a content script: no chrome.* APIs /////////////////////
 
   // return a string
-  return "(" + function (DOCUMENT, dispatchEvent, CUSTOM_EVENT, ERROR, DATE, setTimeout) {
+  return "(" + function (EVENT_ID, DOCUMENT, dispatchEvent, CUSTOM_EVENT, ERROR, DATE, setTimeout, OBJECT, FUNCTION, UNDEFINED) {
 
-    const V8_STACK_TRACE_API = !!(ERROR && ERROR.captureStackTrace);
+    function hasOwn(obj, prop) {
+      return OBJECT.prototype.hasOwnProperty.call(obj, prop);
+    }
+
+    const V8_STACK_TRACE_API = !!(ERROR &&
+      ERROR.captureStackTrace &&
+      hasOwn(ERROR, "stackTraceLimit"));
 
     if (V8_STACK_TRACE_API) {
       ERROR.stackTraceLimit = Infinity; // collect all frames
-    } else {
-      // from https://github.com/csnover/TraceKit/blob/b76ad786f84ed0c94701c83d8963458a8da54d57/tracekit.js#L641
-      var geckoCallSiteRe = /^\s*(.*?)(?:\((.*?)\))?@?((?:file|https?|chrome):.*?):(\d+)(?::(\d+))?\s*$/i;
     }
 
-    var event_id = DOCUMENT.currentScript.getAttribute('data-event-id');
+    function apply(obj, context, args) {
+      return FUNCTION.prototype.apply.call(obj, context, args);
+    }
 
-    // from Underscore v1.6.0
+    // adapted from Underscore v1.6.0
     function debounce(func, wait, immediate) {
-      var timeout, args, context, timestamp, result;
+      let timeout, args, context, timestamp, result;
 
-      var later = function () {
-        var last = DATE.now() - timestamp;
+      let later = function () {
+        let last = DATE.now() - timestamp;
         if (last < wait) {
           timeout = setTimeout(later, wait - last);
         } else {
           timeout = null;
           if (!immediate) {
-            result = func.apply(context, args);
+            result = apply(func, context, args);
             context = args = null;
           }
         }
@@ -57,12 +73,12 @@ function getFpPageScript() {
         context = this; // eslint-disable-line consistent-this
         args = arguments;
         timestamp = DATE.now();
-        var callNow = immediate && !timeout;
+        let callNow = immediate && !timeout;
         if (!timeout) {
           timeout = setTimeout(later, wait);
         }
         if (callNow) {
-          result = func.apply(context, args);
+          result = apply(func, context, args);
           context = args = null;
         }
 
@@ -71,12 +87,12 @@ function getFpPageScript() {
     }
 
     // messages the injected script
-    var send = (function () {
-      var messages = [];
+    let send = (function () {
+      let messages = [];
 
       // debounce sending queued messages
-      var _send = debounce(function () {
-        dispatchEvent.call(DOCUMENT, new CUSTOM_EVENT(event_id, {
+      let _send = debounce(function () {
+        dispatchEvent.call(DOCUMENT, new CUSTOM_EVENT(EVENT_ID, {
           detail: messages
         }));
 
@@ -155,7 +171,9 @@ function getFpPageScript() {
       // this script is at 0, 1 and 2
       let callSite = trace[3];
 
-      let scriptUrlMatches = callSite.match(geckoCallSiteRe);
+      // from https://github.com/csnover/TraceKit/blob/b76ad786f84ed0c94701c83d8963458a8da54d57/tracekit.js#L641
+      const geckoCallSiteRe = /^\s*(.*?)(?:\((.*?)\))?@?((?:file|https?|chrome):.*?):(\d+)(?::(\d+))?\s*$/i,
+        scriptUrlMatches = callSite.match(geckoCallSiteRe);
       return scriptUrlMatches && scriptUrlMatches[3] || '';
     }
 
@@ -165,6 +183,15 @@ function getFpPageScript() {
      */
     function getOriginatingScriptUrl() {
       let trace = getStackTrace();
+
+      if (OBJECT.prototype.toString.call(trace) == '[object String]') {
+        // we failed to get a structured stack trace
+        trace = trace.split('\n');
+        // this script is at 0, 1, 2 and 3
+        let script_url_matches = trace[4].match(/\((http.*:\d+:\d+)/);
+        // TODO do we need stripLineAndColumnNumbers (in both places) here?
+        return script_url_matches && stripLineAndColumnNumbers(script_url_matches[1]) || stripLineAndColumnNumbers(trace[4]);
+      }
 
       if (trace.length < 2) {
         return '';
@@ -190,24 +217,29 @@ function getFpPageScript() {
      * @param item special item objects
      */
     function trapInstanceMethod(item) {
-      var is_canvas_write = (
+      let is_canvas_write = (
         item.propName == 'fillText' || item.propName == 'strokeText'
       );
 
       item.obj[item.propName] = (function (orig) {
+        // set to true after the first write, if the method is not
+        // restorable. Happens if another library also overwrites
+        // this method.
+        let skip_monitoring = false;
 
-        return function () {
-          var args = arguments;
+        function wrapped() {
+          let args = arguments;
 
           if (is_canvas_write) {
             // to avoid false positives,
-            // bail if the text being written is too short
-            if (!args[0] || args[0].length < 5) {
-              return orig.apply(this, args);
+            // bail if the text being written is too short,
+            // of if we've already sent a monitoring payload
+            if (skip_monitoring || !args[0] || args[0].length < 5) {
+              return apply(orig, this, args);
             }
           }
 
-          var script_url = (
+          let script_url = (
               V8_STACK_TRACE_API ?
                 getOriginatingScriptUrl() :
                 getOriginatingScriptUrlFirefox()
@@ -218,8 +250,8 @@ function getFpPageScript() {
               scriptUrl: script_url
             };
 
-          if (item.hasOwnProperty('extra')) {
-            msg.extra = item.extra.apply(this, args);
+          if (hasOwn(item, 'extra')) {
+            msg.extra = apply(item.extra, this, args);
           }
 
           send(msg);
@@ -228,19 +260,31 @@ function getFpPageScript() {
             // optimization: one canvas write is enough,
             // restore original write method
             // to this CanvasRenderingContext2D object instance
-            this[item.propName] = orig;
+            // Careful! Only restorable if we haven't already been replaced
+            // by another lib, such as the hidpi polyfill
+            if (this[item.propName] === wrapped) {
+              this[item.propName] = orig;
+            } else {
+              skip_monitoring = true;
+            }
           }
 
-          return orig.apply(this, args);
-        };
+          return apply(orig, this, args);
+        }
+
+        OBJECT.defineProperty(wrapped, "name", { value: orig.name });
+        OBJECT.defineProperty(wrapped, "length", { value: orig.length });
+        OBJECT.defineProperty(wrapped, "toString", { value: orig.toString.bind(orig) });
+
+        return wrapped;
 
       }(item.obj[item.propName]));
     }
 
-    var methods = [];
+    let methods = [];
 
-    ['getImageData', 'fillText', 'strokeText'].forEach(function (method) {
-      var item = {
+    for (let method of ['getImageData', 'fillText', 'strokeText']) {
+      let item = {
         objName: 'CanvasRenderingContext2D.prototype',
         propName: method,
         obj: CanvasRenderingContext2D.prototype,
@@ -253,15 +297,15 @@ function getFpPageScript() {
 
       if (method == 'getImageData') {
         item.extra = function () {
-          var args = arguments,
+          let args = arguments,
             width = args[2],
             height = args[3];
 
           // "this" is a CanvasRenderingContext2D object
-          if (width === undefined) {
+          if (width === UNDEFINED) {
             width = this.canvas.width;
           }
-          if (height === undefined) {
+          if (height === UNDEFINED) {
             height = this.canvas.height;
           }
 
@@ -274,7 +318,7 @@ function getFpPageScript() {
       }
 
       methods.push(item);
-    });
+    }
 
     methods.push({
       objName: 'HTMLCanvasElement.prototype',
@@ -290,10 +334,12 @@ function getFpPageScript() {
       }
     });
 
-    methods.forEach(trapInstanceMethod);
+    for (let method of methods) {
+      trapInstanceMethod(method);
+    }
 
   // save locally to keep from getting overwritten by site code
-  } + "(document, document.dispatchEvent, CustomEvent, Error, Date, setTimeout));";
+  } + "(" + event_id + ", document, document.dispatchEvent, CustomEvent, Error, Date, setTimeout, Object, Function));";
 
   // code above is not a content script: no chrome.* APIs /////////////////////
 
@@ -301,40 +347,26 @@ function getFpPageScript() {
 
 // END FUNCTION DEFINITIONS ///////////////////////////////////////////////////
 
-(function () {
-
-// don't inject into non-HTML documents (such as XML documents)
-// but do inject into XHTML documents
-if (document instanceof HTMLDocument === false && (
-  document instanceof XMLDocument === false ||
-  document.createElement('div') instanceof HTMLDivElement === false
-)) {
-  return;
-}
-
 // TODO race condition; fix waiting on https://crbug.com/478183
-chrome.runtime.sendMessage({checkEnabled: true},
-  function (enabled) {
-    if (!enabled) {
-      return;
-    }
-    /**
-     * Communicating to webrequest.js
-     */
-    var event_id = Math.random();
-
-    // listen for messages from the script we are about to insert
-    document.addEventListener(event_id, function (e) {
-      // pass these on to the background page
-      chrome.runtime.sendMessage({
-        fpReport: e.detail
-      });
-    });
-
-    window.injectScript(getFpPageScript(), {
-      event_id: event_id
-    });
+chrome.runtime.sendMessage({
+  type: "detectFingerprinting"
+}, function (enabled) {
+  if (!enabled) {
+    return;
   }
-);
+
+  const event_id = Math.random();
+
+  // listen for messages from the script we are about to insert
+  document.addEventListener(event_id, function (e) {
+    // pass these on to the background page (handled by webrequest.js)
+    chrome.runtime.sendMessage({
+      type: "fpReport",
+      data: e.detail
+    });
+  });
+
+  window.injectScript(getPageScript(event_id));
+});
 
 }());

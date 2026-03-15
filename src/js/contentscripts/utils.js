@@ -1,5 +1,5 @@
 /*
- * This file is part of Privacy Badger <https://www.eff.org/privacybadger>
+ * This file is part of Privacy Badger <https://privacybadger.org/>
  * Copyright (C) 2018 Electronic Frontier Foundation
  *
  * Privacy Badger is free software: you can redistribute it and/or modify
@@ -15,22 +15,28 @@
  * along with Privacy Badger.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+(function () {
+
+// don't inject into non-HTML documents (such as XML documents)
+// but do inject into XHTML documents
+if (document instanceof HTMLDocument === false && (
+  document instanceof XMLDocument === false ||
+  document.createElement('div') instanceof HTMLDivElement === false
+)) {
+  return;
+}
+
 /**
  * Executes a script in the page's JavaScript context.
  *
  * @param {String} text The content of the script to insert.
- * @param {Object} data Data attributes to set on the inserted script tag.
  */
-window.injectScript = function (text, data) {
-  var parent = document.documentElement,
+window.injectScript = function (text) {
+  let parent = document.documentElement,
     script = document.createElement('script');
 
   script.text = text;
   script.async = false;
-
-  for (var key in data) {
-    script.setAttribute('data-' + key.replace(/_/g, '-'), data[key]);
-  }
 
   parent.insertBefore(script, parent.firstChild);
   parent.removeChild(script);
@@ -51,3 +57,18 @@ function getFrameUrl() {
   return url;
 }
 window.FRAME_URL = getFrameUrl();
+
+// END FUNCTION DEFINITIONS ///////////////////////////////////////////////////
+
+document.addEventListener("pbSurrogateMessage", function (e) {
+  if (e.detail && e.detail.type == "widgetFromSurrogate") {
+    chrome.runtime.sendMessage({
+      type: "widgetFromSurrogate",
+      name: e.detail.name,
+      data: e.detail.widgetData,
+      frameUrl: window.FRAME_URL
+    });
+  }
+});
+
+}());

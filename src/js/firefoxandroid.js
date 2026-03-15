@@ -1,5 +1,5 @@
 /*
- * This file is part of Privacy Badger <https://www.eff.org/privacybadger>
+ * This file is part of Privacy Badger <https://privacybadger.org/>
  * Copyright (C) 2014 Electronic Frontier Foundation
  *
  * Privacy Badger is free software: you can redistribute it and/or modify
@@ -21,7 +21,6 @@
  * Bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1330159
  */
 
-require.scopes.firefoxandroid = (function() {
 var hasPopupSupport = !!(
   chrome.browserAction.setPopup &&
   chrome.browserAction.getPopup
@@ -73,18 +72,15 @@ function startListeners() {
 
 // Used in popup.js, figures out which tab opened the 'fake' popup
 function getParentOfPopup(callback) {
-  chrome.tabs.query({active: true, currentWindow: true}, function(focusedTab) {
-    var parentId = parseInt(new URL(focusedTab[0].url).searchParams.get('tabId'));
-    chrome.tabs.get(parentId, callback);
+  chrome.tabs.query({ active: true, currentWindow: true }, function (focusedTab) {
+    let parent_tab_id = parseInt(new URL(focusedTab[0].url).searchParams.get('tabId'), 10);
+    chrome.tabs.get(parent_tab_id, callback);
   });
 }
 
-/************************************** exports */
-var exports = {};
-exports.startListeners = startListeners;
-exports.hasPopupSupport = hasPopupSupport;
-exports.hasBadgeSupport = hasBadgeSupport;
-exports.getParentOfPopup = getParentOfPopup;
-return exports;
-/************************************** exports */
-})();
+export default {
+  getParentOfPopup,
+  hasBadgeSupport,
+  hasPopupSupport,
+  startListeners
+};

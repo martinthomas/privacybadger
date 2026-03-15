@@ -1,5 +1,5 @@
 /*
- * This file is part of Privacy Badger <https://www.eff.org/privacybadger>
+ * This file is part of Privacy Badger <https://privacybadger.org/>
  * Copyright (C) 2018 Electronic Frontier Foundation
  *
  * Privacy Badger is free software: you can redistribute it and/or modify
@@ -15,32 +15,75 @@
  * along with Privacy Badger.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-require.scopes.optionslib = (function () {
+import { getBaseDomain } from "./basedomain.js";
 
 /**
- * Gets array of encountered origins.
+ * Filters the list of tracking domains for display on the options page.
  *
- * @param {Object} origins The starting set of domains to be filtered.
- * @param {String} [filter_text] Text to filter origins with.
- * @param {String} [type_filter] Type: user-controlled/DNT-compliant
- * @param {String} [status_filter] Status: blocked/cookieblocked/allowed
+ * @param {Object} domains The starting set of domains to be filtered.
  *
- * @return {Array} The array of origins.
+ * @param {Object} [options] Could contain the following keys:
+ *   {String} [searchFilter] The text to filter domain names against.
+ *   {String} [typeFilter] Type: user-controlled/DNT-compliant
+ *   {String} [statusFilter] Status: blocked/cookieblocked/allowed
+ *   {Boolean} [showNotYetBlocked] Whether to show domains your Badger
+ *     hasn't yet learned to block.
+ *   {Boolean} [hideInSeed] Whether to hide domains found in seed list.
+ *   {Set} [seedBases] Required by hideInSeed.
+ *   {Set} [seedNotYetBlocked] Required by hideInSeed.
+ *
+ * @return {Array} The array of domains.
  */
-function getOriginsArray(origins, filter_text, type_filter, status_filter) {
-  // Make sure filter_text is lower case for case-insensitive matching.
-  if (filter_text) {
-    filter_text = filter_text.toLowerCase();
+function filterDomains(domains, options = {}) {
+
+  let search_filter = options.searchFilter,
+    type_filter = options.typeFilter,
+    status_filter = options.statusFilter,
+    show_not_yet_blocked = options.showNotYetBlocked,
+    hide_in_seed = options.hideInSeed,
+    seedBases = options.seedBases,
+    seedNotYetBlocked = options.seedNotYetBlocked;
+
+  // lower case for case-insensitive matching
+  if (search_filter) {
+    search_filter = search_filter.toLowerCase();
   } else {
-    filter_text = "";
+    search_filter = "";
   }
 
   /**
-   * @param {String} origin The origin to test.
-   * @return {Boolean} Does the origin pass filters?
+   * @param {String} domain The domain to test.
+   * @return {Boolean} Does the domain pass filters?
    */
-  function matchesFormFilters(origin) {
-    const value = origins[origin];
+  function matchesFormFilters(domain) {
+    const value = domains[domain];
+
+    if (!show_not_yet_blocked) {
+      // hide the not-yet-seen-on-enough-sites potential trackers
+      if (value == "allow") {
+        return false;
+      }
+    }
+
+    if (hide_in_seed && seedBases && seedNotYetBlocked) {
+      // if domain is not-yet-blocked, keep only if
+      // domain and its base are not in seed data
+      if (value == "allow") {
+        if (seedBases.has(domain) || seedBases.has(getBaseDomain(domain))) {
+          return false;
+        }
+      // otherwise, keep if domain and its base are either
+      // not in seed data, or they were not-yet-blocked in seed data
+      } else {
+        if (seedBases.has(domain) && !seedNotYetBlocked.has(domain)) {
+          return false;
+        }
+        let base = getBaseDomain(domain);
+        if (seedBases.has(base) && !seedNotYetBlocked.has(base)) {
+          return false;
+        }
+      }
+    }
 
     // filter by type
     if (type_filter) {
@@ -48,8 +91,12 @@ function getOriginsArray(origins, filter_text, type_filter, status_filter) {
         if (!value.startsWith("user")) {
           return false;
         }
-      } else {
-        if (value != type_filter) {
+      } else if (type_filter == "dnt") {
+        if (value != "dnt") {
+          return false;
+        }
+      } else if (type_filter == "-dnt") {
+        if (value == "dnt") {
           return false;
         }
       }
@@ -67,7 +114,7 @@ function getOriginsArray(origins, filter_text, type_filter, status_filter) {
     // filter by search text
     // treat spaces as OR operators
     // treat "-" prefixes as NOT operators
-    let textFilters = filter_text.split(" ").filter(i=>i); // remove empties
+    let textFilters = search_filter.split(" ").filter(i=>i); // remove empties
 
     // no text filters, we have a match
     if (!textFilters.length) {
@@ -75,14 +122,12 @@ function getOriginsArray(origins, filter_text, type_filter, status_filter) {
     }
 
     let positiveFilters = textFilters.filter(i => i[0] != "-"),
-      lorigin = origin.toLowerCase();
+      ldomain = domain.toLowerCase();
 
     // if we have any positive filters, and we don't match any,
     // don't bother checking negative filters
     if (positiveFilters.length) {
-      let result = positiveFilters.some(text => {
-        return lorigin.indexOf(text) != -1;
-      });
+      let result = positiveFilters.some(text => ldomain.indexOf(text) != -1);
       if (!result) {
         return false;
       }
@@ -96,16 +141,13 @@ function getOriginsArray(origins, filter_text, type_filter, status_filter) {
       if (text[0] != "-" || text == "-") {
         return true;
       }
-      return lorigin.indexOf(text.slice(1)) == -1;
+      return ldomain.indexOf(text.slice(1)) == -1;
     });
   }
 
-  // Include only origins that match given filters.
-  return Object.keys(origins).filter(matchesFormFilters);
+  return Object.keys(domains).filter(matchesFormFilters);
 }
 
-return {
-  getOriginsArray,
+export {
+  filterDomains,
 };
-
-}()); // end of require.scopes

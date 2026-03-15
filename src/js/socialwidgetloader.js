@@ -1,5 +1,5 @@
 /*
- * This file is part of Privacy Badger <https://www.eff.org/privacybadger>
+ * This file is part of Privacy Badger <https://privacybadger.org/>
  * Copyright (C) 2014 Electronic Frontier Foundation
  * Derived from ShareMeNot
  * Copyright (C) 2011-2014 University of Washington
@@ -43,73 +43,57 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-var utils = require('utils');
+/* globals badger:false */
 
-require.scopes.widgetloader = (function() {
-
-var exports = {};
-exports.loadWidgetsFromFile = loadWidgetsFromFile;
+import { log } from "./bootstrap.js";
+import utils from "./utils.js";
 
 /**
- * Loads a JSON file at filePath and returns the parsed object.
+ * Returns the contents of the file at given path.
  *
- * @param {String} filePath the path to the JSON file, relative to the
- *                          extension's data folder
- * @param {Function} callback callback(jsonParsed)
+ * @param {String} file_path the path to the file
+ * @param {Function} callback the callback
  */
-function loadJSONFromFile(filePath, callback) {
-  getFileContents(filePath, function(jsonString) {
-    var jsonParsed = JSON.parse(jsonString);
-    Object.freeze(jsonParsed); // prevent modifications to jsonParsed
-
-    callback(jsonParsed);
-  });
-}
-
-/**
- * Returns the contents of the file at filePath.
- *
- * @param {String} filePath the path to the file
- * @param {Function} callback callback(responseText)
- */
-function getFileContents(filePath, callback) {
-  var url = chrome.runtime.getURL(filePath);
-
-  utils.xhrRequest(url, function(err, responseText) {
+function getFileContents(file_path, callback) {
+  let url = chrome.runtime.getURL(file_path);
+  utils.fetchResource(url, function (err, response_text) {
     if (err) {
-      console.error(
-        "Problem fetching contents of file at",
-        filePath,
-        err.status,
-        err.message
-      );
+      console.error(`Problem fetching contents of ${file_path}: ${err}`);
     } else {
-      callback(responseText);
+      callback(response_text);
     }
   });
 }
 
 /**
- * Returns an array of SocialWidget objects that are loaded from the file at
- * filePath.
- *
- * @param {String} filePath the path to the JSON file, relative to the
- *                          extension's data folder
- * @param {Function} callback callback(socialwidgets)
+ * @param {String} file_path the path to the JSON file
+ * @returns {Promise} resolved with an array of SocialWidget objects
  */
-function loadWidgetsFromFile(filePath, callback) {
-  loadJSONFromFile(filePath, function(widgetsJson) {
-    let widgets = [];
-
-    // loop over each widget, making a SocialWidget object
-    for (let widget_name in widgetsJson) {
-      let widgetProperties = widgetsJson[widget_name];
-      let widget = new SocialWidget(widget_name, widgetProperties);
-      widgets.push(widget);
-    }
-
-    callback(widgets);
+function loadWidgetsFromFile(file_path) {
+  return new Promise(function (resolve) {
+    getFileContents(file_path, function (contents) {
+      badger.widgetList = initializeWidgets(JSON.parse(contents));
+      log("Initialized widgets from disk");
+      resolve();
+    });
   });
+}
+
+/**
+ * @param {Object} widgetsJson widget data
+ * @returns {Array} array of SocialWidget objects
+ */
+function initializeWidgets(widgetsJson) {
+  let widgets = [];
+
+  // loop over each widget, making a SocialWidget object
+  for (let widget_name in widgetsJson) {
+    let widgetProperties = widgetsJson[widget_name];
+    let widget = new SocialWidget(widget_name, widgetProperties);
+    widgets.push(widget);
+  }
+
+  return widgets;
 }
 
 /**
@@ -119,12 +103,21 @@ function loadWidgetsFromFile(filePath, callback) {
  * @param {Object} properties the properties of the socialwidget
  */
 function SocialWidget(name, properties) {
-  this.name = name;
+  let self = this;
 
-  for (var property in properties) {
-    this[property] = properties[property];
+  self.name = name;
+
+  for (let property in properties) {
+    self[property] = properties[property];
+  }
+
+  // standardize on "domains"
+  if (self.domain) {
+    self.domains = [self.domain];
   }
 }
 
-return exports;
-}()); //require scopes
+export default {
+  initializeWidgets,
+  loadWidgetsFromFile,
+};

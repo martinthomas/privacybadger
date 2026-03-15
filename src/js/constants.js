@@ -1,5 +1,5 @@
 /*
- * This file is part of Privacy Badger <https://www.eff.org/privacybadger>
+ * This file is part of Privacy Badger <https://privacybadger.org/>
  * Copyright (C) 2014 Electronic Frontier Foundation
  *
  * Privacy Badger is free software: you can redistribute it and/or modify
@@ -15,10 +15,7 @@
  * along with Privacy Badger.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-require.scopes.constants = (function() {
-
-var exports = {
-
+let exports = {
   // Tracking status constants
   NO_TRACKING: "noaction",
   ALLOW: "allow",
@@ -27,13 +24,12 @@ var exports = {
   DNT: "dnt",
   USER_ALLOW: "user_allow",
   USER_BLOCK: "user_block",
-  USER_COOKIE_BLOCK: "user_cookieblock",
+  USER_COOKIEBLOCK: "user_cookieblock",
 
-  // URLS
-  DNT_POLICIES_URL: "https://www.eff.org/files/dnt-policies.json",
-  DNT_POLICIES_LOCAL_URL: chrome.runtime.getURL('data/dnt-policies.json'),
-  YELLOWLIST_URL: "https://www.eff.org/files/cookieblocklist_new.txt",
-  YELLOWLIST_LOCAL_URL: chrome.runtime.getURL('data/yellowlist.txt'),
+  // URLs
+  CNAME_DOMAINS_LOCAL_URL: chrome.runtime.getURL('data/cname_domains.json'),
+  PBCONFIG_LOCAL_URL: chrome.runtime.getURL('data/pbconfig.json'),
+  PBCONFIG_REMOTE_URL: "https://www.eff.org/files/pbconfig.json",
   SEED_DATA_LOCAL_URL: chrome.runtime.getURL('data/seed.json'),
 
   // The number of 1st parties a 3rd party can be seen on
@@ -41,14 +37,44 @@ var exports = {
   MAX_COOKIE_ENTROPY: 12,
 
   DNT_POLICY_CHECK_INTERVAL: 1000, // one second
+
+  PANOPTICLICK_DOMAINS: ["trackersimulator.org", "eviltracker.net"],
+
+  // Browser (modified during the build process)
+  BROWSER: "firefox",
+
+  REVIEW_LINKS: {
+    chrome: "https://chromewebstore.google.com/detail/privacy-badger/pkehgijcmpdhfbdbbnkijodmdjhbjlgp/reviews",
+    firefox: "https://addons.mozilla.org/en-US/firefox/addon/privacy-badger17/",
+    edge: "https://microsoftedge.microsoft.com/addons/detail/privacy-badger/mkejgcgkdlddbggjhhflekkondicpnop",
+    opera: "https://addons.opera.com/en/extensions/details/privacy-badger/",
+  },
+
+  FP_CDN_DOMAINS: new Set([
+    'd.alicdn.com',
+    's3.us-west-2.amazonaws.com',
+    'fp-cdn.azureedge.net',
+    'sdtagging.azureedge.net',
+    'cdnjs.cloudflare.com',
+    'd1af033869koo7.cloudfront.net',
+    'd38xvr37kwwhcm.cloudfront.net',
+    'dlthst9q2beh8.cloudfront.net',
+    'cdn.jsdelivr.net',
+    'gadasource.storage.googleapis.com',
+  ]),
 };
 
 exports.BLOCKED_ACTIONS = new Set([
   exports.BLOCK,
   exports.USER_BLOCK,
   exports.COOKIEBLOCK,
-  exports.USER_COOKIE_BLOCK,
+  exports.USER_COOKIEBLOCK,
 ]);
 
-return exports;
-})();
+exports.USER_ACTIONS = new Set([
+  exports.USER_BLOCK,
+  exports.USER_COOKIEBLOCK,
+  exports.USER_ALLOW
+]);
+
+export default exports;

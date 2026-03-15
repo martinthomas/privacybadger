@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-# -*- coding: UTF-8 -*-
 
 import unittest
+
 import pbtest
 
 from selenium.common.exceptions import TimeoutException
@@ -12,87 +12,107 @@ from pbtest import retry_until
 class SurrogatesTest(pbtest.PBSeleniumTest):
     """Integration tests to verify surrogate script functionality."""
 
-    # TODO update to pbtest.org URL
-    # TODO and remove the HTML pages from eff.org then
-    TEST_URL = "https://www.eff.org/files/pbtest/ga_js_surrogate_test.html"
+    FIXTURE_HOST = "efforg.github.io"
+    FIXTURE_URL = (
+        f"https://{FIXTURE_HOST}/privacybadger-test-fixtures/html/"
+        "ga_surrogate.html"
+    )
+    SURROGATE_HOST_BASE = "google-analytics.com"
+    SURROGATE_HOST = f"www.{SURROGATE_HOST_BASE}"
 
-    def load_ga_js_test_page(self, timeout=12):
-        self.load_url(SurrogatesTest.TEST_URL)
+    def load_ga_js_fixture(self, timeout=12):
+        self.load_url(self.FIXTURE_URL)
+
+        load_status_sel = '#third-party-load-result'
+        self.wait_for_script(
+            "return document.querySelector(arguments[0]).textContent",
+            load_status_sel, timeout=timeout)
+        if self.find_el_by_css(load_status_sel).text == "error":
+            return False
+
         try:
             self.wait_for_and_switch_to_frame('iframe', timeout=timeout)
             self.wait_for_text('h1', "It worked!", timeout=timeout)
+            self.driver.switch_to.default_content()
             return True
         except TimeoutException:
             return False
 
     def test_ga_js_surrogate(self):
-        # verify the surrogate is present
-        self.load_url(self.options_url)
-        self.assertTrue(self.js(
-            "let bg = chrome.extension.getBackgroundPage();"
-            "const sdb = bg.require('surrogatedb');"
-            "return sdb.hostnames.hasOwnProperty('www.google-analytics.com');"
-        ), "Surrogate is missing but should be present.")
+        # clear pre-trained/seed tracker data
+        self.clear_tracker_data()
 
         # verify site loads
-        self.assertTrue(
-            self.load_ga_js_test_page(),
-            "Page failed to load even before we did anything."
-        )
+        assert self.load_ga_js_fixture(), (
+            "page failed to load even before we did anything")
 
-        # block ga.js (known to break the site)
-        self.load_url(self.options_url)
-        # also back up the surrogate definition before removing it
-        ga_backup = self.js(
-            "let bg = chrome.extension.getBackgroundPage();"
-            "bg.badger.heuristicBlocking.blacklistOrigin('www.google-analytics.com', 'google-analytics.com');"
-            "const sdb = bg.require('surrogatedb');"
-            "return JSON.stringify(sdb.hostnames['www.google-analytics.com']);"
-        )
-        # now remove the surrogate
-        self.js(
-            "let bg = chrome.extension.getBackgroundPage();"
-            "const sdb = bg.require('surrogatedb');"
-            "delete sdb.hostnames['www.google-analytics.com'];"
-        )
-
-        # wait until this happens
-        self.wait_for_script(
-            "let bg = chrome.extension.getBackgroundPage();"
-            "const sdb = bg.require('surrogatedb');"
-            "return !sdb.hostnames.hasOwnProperty('www.google-analytics.com');",
-            timeout=5,
-            message="Timed out waiting for surrogate to get removed."
-        )
+        # block ga.js (should break the site)
+        self.block_domain(self.SURROGATE_HOST)
+        # disable surrogates
+        self.driver.execute_async_script(
+            "let done = arguments[arguments.length - 1];"
+            "chrome.runtime.sendMessage({"
+            "  type: 'disableSurrogates'"
+            "}, done);")
 
         # verify site breaks
-        self.assertFalse(
-            self.load_ga_js_test_page(),
-            "Page loaded successfully when it should have failed."
-        )
+        assert not self.load_ga_js_fixture(), (
+            "page loaded successfully when it should have failed")
 
-        # re-enable surrogate
+        # re-enable surrogates
         self.load_url(self.options_url)
-        self.js(
-            "let bg = chrome.extension.getBackgroundPage();"
-            "const sdb = bg.require('surrogatedb');"
-            "sdb.hostnames['www.google-analytics.com'] = JSON.parse('%s');" % ga_backup
-        )
-
-        # wait until this happens
-        self.wait_for_script(
-            "let bg = chrome.extension.getBackgroundPage();"
-            "const sdb = bg.require('surrogatedb');"
-            "return sdb.hostnames.hasOwnProperty('www.google-analytics.com');",
-            timeout=5,
-            message="Timed out waiting for surrogate to get readded."
-        )
+        self.driver.execute_async_script(
+            "let done = arguments[arguments.length - 1];"
+            "chrome.runtime.sendMessage({"
+            "  type: 'restoreSurrogates'"
+            "}, done);")
 
         # verify site loads again
-        self.assertTrue(
-            retry_until(self.load_ga_js_test_page),
-            "Page failed to load after surrogation."
-        )
+        assert retry_until(self.load_ga_js_fixture), (
+            "page failed to load after surrogation")
+
+    def test_cookieblocking_base_overwrites_subdomain_surrogate(self):
+        SURROGATE_TOSTRING = "function() {\n    }"
+
+        def get_tracker_tostring():
+            return self.js("return _gat._getTrackers.toString();")
+
+        self.block_domain(self.SURROGATE_HOST)
+
+        assert self.load_ga_js_fixture()
+        # verify we replaced SURROGATE_HOST with surrogate
+        assert get_tracker_tostring() == SURROGATE_TOSTRING, (
+            "tracker does not appear to have been replaced with surrogate")
+
+        self.cookieblock_domain(self.SURROGATE_HOST_BASE)
+
+        assert self.load_ga_js_fixture()
+        # verify that we are no longer replacing SURROGATE_HOST with surrogate
+        assert get_tracker_tostring() != SURROGATE_TOSTRING, (
+            "surrogation took place when it shouldn't have")
+
+    def test_userblock_applies_surrogate(self):
+        self.block_domain(self.SURROGATE_HOST)
+        self.set_user_action(self.SURROGATE_HOST, "block")
+        assert retry_until(self.load_ga_js_fixture), (
+            "page widget unexpectedly failed")
+        # also verify that surrogation took place
+        text_sel = "#script-string"
+        self.wait_for_any_text(text_sel)
+        assert self.find_el_by_css(text_sel).text == "function() { }", (
+            "tracker does not appear to have been replaced with surrogate")
+
+    def test_site_override_for_domain_with_surrogate(self):
+        text_sel = "#script-string"
+
+        self.block_domain(self.SURROGATE_HOST)
+        self.add_site_override(self.SURROGATE_HOST, self.FIXTURE_HOST)
+
+        # assert the actual tracker loaded, not the surrogate
+        self.load_url(self.FIXTURE_URL)
+        self.wait_for_any_text(text_sel)
+        assert self.find_el_by_css(text_sel).text != "function() { }", (
+            "still redirecting to surrogate despite site-specific override")
 
 
 if __name__ == "__main__":

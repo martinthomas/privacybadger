@@ -1,98 +1,94 @@
-(function () {
+import constants from "../../js/constants.js";
+import htmlUtils from "../../js/htmlutils.js";
 
 QUnit.module("HTML Utils");
 
-var htmlUtils = require("htmlutils").htmlUtils;
-
-QUnit.test("isChecked", function (assert) {
-  // Test parameters
-  var tests = [
-    {
-      inputAction: "allow",
-      originAction: "allow",
-      expectedResult: "checked",
-    },
-    {
-      inputAction: "allow",
-      originAction: "block",
-      expectedResult: "",
-    },
-  ];
-
-  // Run each test.
-  for (var i = 0; i < tests.length; i++) {
-    var inputAction = tests[i].inputAction;
-    var originAction = tests[i].originAction;
-    var expected = tests[i].expectedResult;
-    var message = "Inputs: '" + inputAction + "' and '" + originAction + "'";
-    assert.equal(htmlUtils.isChecked(inputAction, originAction), expected, message);
-  }
-});
-
 QUnit.test("getActionDescription", (assert) => {
-  // Test parameters
   const getMessage = chrome.i18n.getMessage,
-    origin = "pbtest.org";
+    fqdn = "example.com";
+
   const tests = [
     {
-      action: "block",
-      origin,
-      expectedResult: getMessage('badger_status_block', origin)
+      action: constants.BLOCK,
+      fqdn,
+      expectedResult: getMessage('badger_status_block', fqdn)
     },
     {
-      action: "cookieblock",
-      origin,
-      expectedResult: getMessage('badger_status_cookieblock', origin)
+      action: constants.COOKIEBLOCK,
+      fqdn,
+      expectedResult: getMessage('badger_status_cookieblock', fqdn)
     },
     {
-      action: "allow",
-      origin,
-      expectedResult: getMessage('badger_status_allow', origin)
+      action: constants.ALLOW,
+      fqdn,
+      expectedResult: getMessage('badger_status_allow', fqdn)
+    },
+    {
+      action: constants.USER_BLOCK,
+      fqdn,
+      expectedResult: getMessage('badger_status_block', fqdn)
+    },
+    {
+      action: constants.USER_COOKIEBLOCK,
+      fqdn,
+      expectedResult: getMessage('badger_status_cookieblock', fqdn)
+    },
+    {
+      action: constants.USER_COOKIEBLOCK,
+      fqdn,
+      blockedFpScripts: ['/fp.min.js'],
+      expectedResult: getMessage('badger_status_blocked_scripts', fqdn)
+    },
+    {
+      action: constants.USER_ALLOW,
+      fqdn,
+      expectedResult: getMessage('badger_status_allow', fqdn)
+    },
+    {
+      action: "dnt",
+      fqdn,
+      expectedResult: getMessage('dnt_tooltip')
     },
   ];
 
-  // Run each test.
-  for (let i = 0; i < tests.length; i++) {
-    const test = tests[i],
-      message = `Inputs: '${test.action}' and '${test.origin}'`;
-
+  for (let test of tests) {
     assert.equal(
-      htmlUtils.getActionDescription(test.action, test.origin),
+      htmlUtils.getActionDescription(
+        test.action, test.fqdn, test.blockedFpScripts),
       test.expectedResult,
-      message
+      `Inputs: '${test.action}' and '${test.fqdn}'`
     );
   }
 });
 
 QUnit.test("getToggleHtml", function (assert) {
   // Test parameters
-  var tests = [
+  const domain = "pbtest.org";
+  const tests = [
     {
-      origin: "pbtest.org",
-      action: "block",
-      expectedResult: "0",
+      action: constants.BLOCK,
+      expectedResult: constants.BLOCK,
     },
     {
-      origin: "pbtest.org",
-      action: "cookieblock",
-      expectedResult: "1",
+      action: constants.COOKIEBLOCK,
+      expectedResult: constants.COOKIEBLOCK,
     },
     {
-      origin: "pbtest.org",
-      action: "allow",
-      expectedResult: "2",
+      action: constants.ALLOW,
+      expectedResult: constants.ALLOW,
+    },
+    {
+      action: constants.DNT,
+      expectedResult: constants.ALLOW,
     },
   ];
 
   // Run each test.
-  for (var i = 0; i < tests.length; i++) {
-    var origin = tests[i].origin;
-    var action = tests[i].action;
-    var expected = tests[i].expectedResult;
-    var message = "Inputs: '" + origin + "' and '" + action + "'";
-    var html = htmlUtils.getToggleHtml(origin, action);
-    var inputValue = $('input[name="' + origin + '"]:checked', html).val();
-    assert.equal(inputValue, expected, message);
+  for (let test of tests) {
+    let message = `Inputs: '${domain}' and '${test.action}'`;
+    let html = htmlUtils.getToggleHtml(domain, test.action);
+    let input_val = $('input[name="' + domain + '"]:checked', html).val();
+    assert.equal(input_val, test.expectedResult, message);
   }
 });
 
@@ -101,40 +97,36 @@ QUnit.test("getOriginHtml", function (assert) {
   var tests = [
     {
       existingHtml: '<div id="existinghtml"></div>',
-      origin: "pbtest.org",
-      action: "allow",
-      isWhitelisted: false,
+      domain: "pbtest.org",
+      action: constants.ALLOW,
     },
     {
       existingHtml: '<div id="existinghtml"></div>',
-      origin: "pbtest.org",
-      action: "block",
-      isWhitelisted: true,
+      domain: "pbtest.org",
+      action: constants.DNT,
     },
   ];
 
   // Run each test.
-  for (var i = 0; i < tests.length; i++) {
-    var existingHtml = tests[i].existingHtml;
-    var origin = tests[i].origin;
-    var action = tests[i].action;
-    var isWhitelisted = tests[i].isWhitelisted;
+  for (let test of tests) {
+    let existing_html = test.existingHtml,
+      domain = test.domain,
+      action = test.action;
 
-    var htmlResult = existingHtml + htmlUtils.getOriginHtml(
-      origin, action, isWhitelisted);
+    let result_html = existing_html + htmlUtils.getOriginHtml(domain, action);
 
     // Make sure existing HTML is present.
-    var existingHtmlExists = htmlResult.indexOf(existingHtml) > -1;
-    assert.ok(existingHtmlExists, "Existing HTML should be present");
+    let html_found = result_html.includes(existing_html);
+    assert.ok(html_found, "Existing HTML should be present");
 
-    // Make sure origin is set.
-    var originDataExists = htmlResult.indexOf('data-origin="' + origin + '"') > -1;
-    assert.ok(originDataExists, "Origin should be set");
+    // Make sure domain is set.
+    let dataset_prop_found = result_html.includes('data-origin="' + domain + '"');
+    assert.ok(dataset_prop_found, "Domain should be set");
 
     // Check for presence of DNT content.
-    var dntExists = htmlResult.indexOf('id="dnt-compliant"') > -1;
-    assert.equal(dntExists, isWhitelisted,
-      "DNT div should " + ((dntExists) ? "" : "not ") + "be present");
+    let dnt_found = result_html.includes('class="dnt-compliant"');
+    assert.equal(dnt_found, action == constants.DNT,
+      "DNT div should " + (dnt_found ? "" : "not ") + "be present");
   }
 });
 
@@ -261,5 +253,3 @@ QUnit.test("sortDomains", (assert) => {
     );
   });
 });
-
-}());

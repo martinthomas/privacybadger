@@ -1,5 +1,7 @@
 # PRIVACY BADGER DESIGN AND ROADMAP
 
+See also [the FAQ on Privacy Badger's homepage](https://privacybadger.org/#faq).
+
 ## DESIGN
 
 ### OBJECTIVE
@@ -25,23 +27,37 @@ Privacy Badger:
    environments, it is advisable to note "installing Privacy Badger will enable
    Do Not Track" on your installation page / app store entry.
 2. Observes which first party origins a given third party origin is setting cookies on
-   (certain cookies are deemed to be "low entropy", as discussed below)
+   (certain cookies are deemed to be "low entropy", as discussed below).
+
    2a. Observes which first party origins a given third party is doing certain
    types of fingerprinting on.
+
    2b. Observes which first party origins a given third party is setting certain types
    of supercookies on.
-3. If a third party origin receives a cookie, a supercookie, or makes
-   JavaScript fingerprinting API calls on 3 or more first party origins, this is deemed to be
-   "cross site tracking".
-4. Typically, cross site trackers are blocked completely; Privacy Badger prevents the
-   browser from communicating with them. The exception is if the site is on
-   Privacy Badger's "cookie block list" (aka the "yellow list"), in which case
-   resources from the site are loaded, but with their (third party) cookies, as
-   well as referer header, blocked. The cookie block list is routinely fetched
-   from [an EFF URL](https://www.eff.org/files/cookieblocklist_new.txt) to allow prompt fixes for breakage.
+
+   2c. Observes which first party origins a given third party is sending
+   certain parts of first party cookies back to itself using image query
+   strings (pixel cookie sharing).
+
+   2d. Observes on which first party origins a given third party
+   uses the [Beacon API].
+
+3. If a third party origin receives a cookie, a supercookie, an image pixel
+   containing first party cookie data, uses the Beacon API, or makes
+   JavaScript fingerprinting API calls on three or more first party origins,
+   this is deemed to be "cross site tracking".
+4. Typically, cross site trackers are blocked completely; Privacy Badger
+   prevents the browser from communicating with them. The exception is if the
+   site is on Privacy Badger's "yellow list" (aka the "cookie block list"), in
+   which case resources from the site are loaded, but without access to their
+   (third party) cookies or local storage, and with the referer header either
+   trimmed down to the origin (for GET requests) or removed outright (all other
+   requests). The yellow list is routinely fetched from the [remote config URL]
+   to allow prompt fixes for breakage.
+
    Until methods for blocking them have been implemented, domains that perform
    fingerprinting or use third party supercookies should not be added to the
-   cookie block list.
+   yellow list.
 5. Users can also choose custom rules for any given domain flagged by Privacy Badger,
    overrulling any automatic decision Privacy Badger has made about the domain.
    Privacy Badger uses three-state sliders (red → block, yellow → cookie block, green → allow) to convey this
@@ -54,74 +70,104 @@ Privacy Badger:
    embedded on that domain.
    Sites post the policy at [a well-known URL](https://example.com/.well-known/dnt-policy.txt)
    on their domains. The contents must match those of a file from the list of
-   acceptable policies exactly; the policy file is [maintained on github](https://github.com/EFForg/dnt-policy/),
-   but Privacy Badger fetches a list of known-good hashes periodically [from EFF](https://www.eff.org/files/dnt-policies.json)
-   (version  1.0 of the policy file will be added to that list when Privacy Badger
-   reaches version 1.0)
+   acceptable policies exactly; the policy file is [maintained on GitHub](https://github.com/EFForg/dnt-policy/),
+   and Privacy Badger fetches a list of known-good hashes periodically from the [remote config URL].
 
 #### Further Details
 
-Data Structures:
+Learning from cookies and the Beacon API happens in [`heuristicblocking.js`](../src/js/heuristicblocking.js) [*sic*].
 
-- action_map = { 'google.com': blocked, 'fonts.google.com': 'cookieblocked', 'apis.fonts.google.com': 'user_cookieblock', 'foo.tracker.net': 'allow', 'tracker.net': 'DNT', }
-- snitch_map = {google.com: array('cooperq.com', 'noah.com', 'eff.org'), tracker.net: array(a.com, b.com, c.com)}
-- dnt_domains = array('tracker.net', 'dnt.eff.org')
-- settings = {social_widgets = true, ...}
-- cookie_block_list = "{'fonts.google.com': true, 'maps.google.com', true}"
+Privacy Badger also learns from [fingerprinting](../src/js/contentscripts/fingerprinting.js) and [HTML5 local storage "supercookies"](../src/js/contentscripts/supercookie.js).
 
+Request blocking/modification happens in [`webrequest.js`](../src/js/webrequest.js).
 
-On Request():
+##### Technical Implementation:
 
-      if privacy badger is not enabled for the tab domain then return
-      if fqdn is not a third party then return
+When a browser with Privacy Badger enabled makes a request to a third party, and Privacy Badger observes tracking (for example, the request contains a cookie or the response tries to set a cookie), the domain gets flagged as "tracking".
 
-      action = check_action(fqdn) (described below)
+Origins that make tracking requests get stored in a key-value store (`snitch_map`) where the keys are the [eTLD+1](https://en.wikipedia.org/wiki/Public_Suffix_List) of tracking origins, and the values are lists of the first party eTLD+1 origins (that is, the sites) these requests were made on. Such origins also get stored in another key-value store (`action_map`) where each origin is associated with the action Privacy Badger should take when it next sees requests (or responses) by that origin.
 
-      if action is block then cancel request
-      if action is cookie_block then strip headers
-      if fqdn is nontracking (i.e check_action returned nothing) then do nothing
-      if action is noaction or any user override then async_check_tracking
-      if action is allow && count == 2 then blocking_check_tracking
-        if check_tracking changed action then call check_action again
-        else do_nothing
+Once Privacy Badger sees tracking from an origin on `constants.TRACKING_THRESHOLD` or more first party origins, Privacy Badger will update `action_map` to note that this origin should now get blocked (`constants.BLOCK`). If the origin is on the yellow list, its `action_map` entry will instead get updated to `constants.COOKIEBLOCK`, and its requests will be allowed to resolve although without access to cookies or local storage and with the referer header trimmed or removed.
 
-      async_check_dnt(fqdn)
+Additionally users can manually set the desired action for any FQDN, which updates `action_map`.
 
-check_action(fqdn): returns action
+These key-value stores are stored on disk, and persist between browser sessions.
 
-      related_domains = array()
-      best_action = 'noaction'
+##### Data Structures:
 
-      for $domain in range(fqdn ... etld+1)
-        if action_map contains $domain
-          related_domains.shift($domain)
+`action_map` is an object keyed by fully qualified domain names of third parties (potential trackers). The value for each key is another object containing at least one (`heuristicAction`) and up to four entries:
 
-        for each domain in related domains
-          if score(domain.action) > score(best_action)
-            best_action = domain.action
+- `heuristicAction`: one of `""` (no tracking seen), `"allow"` (Privacy Badger has not yet made a decision to block), `"cookieblock"`, `"block"`
+- `userAction`: one of `"user_allow"`, `"user_cookieblock"`, `"user_block"`. Set if the user moves the slider for the corresponding third party FQDN.
+- `dnt`: `true` or `false`
+- `nextUpdateTime`: an integer timestamp of the earliest time we should recheck for presence of EFF's DNT Policy
 
-        return best_action
+For example:
 
-check_tracking(fqdn): return boolean
+```json
+{
+    "google.com": {
+        "heuristicAction": "block",
+        "nextUpdateTime": 1602051816434
+    },
+    "fonts.google.com": {
+        "heuristicAction": "cookieblock"
+    },
+    "accounts.google.com": {
+        "heuristicAction": "cookieblock",
+        "userAction": "user_allow"
+    },
+    "maybe.a.tracker.example.net": {
+        "heuristicAction": "allow"
+    },
+    "privacy.respectful.example.com": {
+        "dnt": true,
+        "heuristicAction": "",
+        "nextUpdateTime": 1602130658236
+    }
+}
+```
 
-      var base_domain = etld+1(fqdn)
+`snitch_map` is an object keyed by [eTLD+1](https://en.wikipedia.org/wiki/Public_Suffix_List) (no subdomains!) domain names of third parties (potential trackers). The values are arrays of eTLD+1 domain names of first parties (sites you visit directly) that the corresponding third party was seen perform tracking on. For example:
 
-      if has_cookie or has_supercookie or has_fingerprinting
-        if snitch_map doesn't have base domain add it
-        if snitch_map doesn't have first party add it
-        if snitch_map.base_domain.len >= 3
-          add base domain to action map as blocked
-          add all chlidren of base_domain and self from cookie block list to action map
-          return true
+```json
+{
+    "google-analytics.com": [
+        "linkedin.com",
+        "theguardian.com",
+        "godaddy.com"
+    ]
+}
+```
+
+[`tracking_map`](https://github.com/EFForg/privacybadger/pull/2839) maps tracker eTLD+1 (base) domains to specific [types of tracking](/#primary-mechanism) (such as canvas fingerprinting), as well as the sites those types of tracking were detected on. `tracking_map` is similar to `snitch_map`, but instead of tracker base domains pointing to arrays of site base domains, tracker base domains point to objects keyed by site base domains with arrays of detected tracking types for values. For example:
+
+```json
+{
+    "arkoselabs.com": {
+        "cheaptickets.com": [
+            "canvas"
+        ],
+        "expedia.ca": [
+            "canvas"
+        ],
+        "expedia.co.uk": [
+            "canvas"
+        ]
+    }
+}
+```
+`tracking_map` does not contain every tracker in `snitch_map` because for now it only stores "canvas" (fingerprinting), "pixelcookieshare" and "beacon" tracking types.
+
+Finally, `fp_scripts` maps fingerprinter script paths to full-qualified domain names. We use it to [block known CDN-hosted fingerprinters](https://github.com/EFForg/privacybadger/pull/2891).
+
 
 ##### What is an "origin" for Privacy Badger?
 
 Privacy Badger has two notions of origin.  One is the [effective top level
 domain](https://wiki.mozilla.org/Public_Suffix_List) plus one level of
 subdomain (eTLD+1), computed using
-[getBaseDomain](https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XPCOM/Reference/Interface/nsIEffectiveTLDService)
-(which is built-in to Firefox; in Chrome we [ship a
-copy](https://github.com/EFForg/privacybadgerchrome/blob/master/lib/basedomain.js#L69).
+[`getBaseDomain()`](https://github.com/EFForg/privacybadger/blob/8e8ad9838b74b6d13354163f78d362ca60dd44f9/src/lib/basedomain.js#L75).
 The accounting for which origins are trackers or not is performed by looking
 up how many first party fully qualified domain names (FQDNs) have been tracked by each
 of these eTLD + 1 origins.  This is a conservative choice, which avoids the
@@ -134,37 +180,10 @@ Users are able to override Privacy Badger's decision for any given FQDN if they
 do not wish to block something that is otherwise blocked (or block something
 that is not blocked).
 
-To illustrate this, suppose the site <tt>tracking.co.uk</tt> was embedded on
-every site on the Web, but each embed came from a randomly selected subdomain
-<tt>a.tracking.co.uk</tt>, <tt>b.tracking.co.uk</tt>,
-<tt>c.tracking.co.uk</tt>, etc.  Suppose the user visits
-<tt>www.news-example.com</tt> and <tt>search.jobs-example.info</tt>.
-
-The accounting data structure <tt>seenThirdParties</tt> would come to include:
-
-```
-{
-  ...
-  "tracking.co.uk" : {
-    "news-example.com"  : true,
-    "jobs-example.info" : true,
-  }
-  ...
-}
-```
-
-Now suppose the user visits a third site, <tt>clickbait.nonprofit.org</tt>,
-and is tracked by <tt>q.tracking.co.uk</tt> on that site.  The
-seenThirdParties data structure will have a third entry added to it, meeting
-the threshold of three first party origins and defining
-<tt>tracking.co.uk</tt> as a tracking eTLD+1.  At this point
-<tt>tracking.co.uk</tt> will be added to the block list. Any future requests to
-<tt>tracking.co.uk</tt>, or any of its subdomains, will be blocked.
-The user can manually unblock specific subdomains as necessary via the popup menu.
 
 ##### What is a "low entropy" cookie?
 
-Our [current heuristic](https://github.com/EFForg/privacyBadgerchrome/blob/master/src/heuristicblocking.js#L563) is to assign "number of identifying bits" estimates to
+Our [current cookie heuristic](https://github.com/EFForg/privacybadger/blob/8e8ad9838b74b6d13354163f78d362ca60dd44f9/src/js/heuristicblocking.js#L632) is to assign "number of identifying bits" estimates to
 some known common cookie values, and to bound the sum of these to 12.
 Predetermined low-entropy cookies will not be identified as tracking, nor will
 combinations of them so long as their total estimated entropy is under 12 bits.
@@ -179,35 +198,27 @@ Privacy Badger aims to give the user access to the functionality when they want
 it, but protection against the tracking at all other times.
 
 To that end, Privacy Badger has incorporated code from the ShareMeNot project
-so that it is able to replace various types of widgets hosted
-by third party origins with local, static equivalents that either replace the
+so that it is able to [replace various types of third-party widgets with local equivalents](https://www.eff.org/deeplinks/2024/01/privacy-badger-puts-you-control-widgets) that either replace the
 original widget faithfully, or create a click-through step before the widget
 is loaded and tracks the user.
 
-The widget replacement table lives in the [socialwidgets.json file](https://github.com/EFForg/privacyBadgerchrome/blob/master/data/socialwidgets.json).
+The widget replacement table lives in the [socialwidgets.json file](https://github.com/EFForg/privacybadger/blob/8e8ad9838b74b6d13354163f78d362ca60dd44f9/src/data/socialwidgets.json).
 Widgets are replaced unless the user has chosen to specifically allow that third party
 domain (by moving the slider to 'green' in the UI), so users can selectively
 disable this functionality if they wish. The code for social media widgets is
 quite diverse, so not all variants (especially custom variants that sites build
 for themselves) are necessarily replaced.
 
-The widget method may be used in the future to implement ["script
-surrogates"](https://github.com/EFForg/privacyBadgerchrome/issues/400),
-which are a more privacy-protective alternative to yellowlisting certain
-third party JavaScript domains. If that occurs, <tt>socialwidgets.json</tt>
-should also be periodically fetched from a live EFF URL.
-
-
 #### What are the states for domain responses?
 
-Currently domains have three states: no action, cookie block, and block.
-No action allows all requests to resolve as normal without intervention from
+Currently domains have three states: no action, cookie block, and block. No
+action allows all requests to resolve as normal without intervention from
 Privacy Badger. Cookie block allows for requests to resolve normally but will
-block cookies from being read or created, it will also block the referer header.
-Block will cause any requests from that origin to be blocked entireley; before
-even a TCP connection can be established. The user can toggle these options
-manually, which will supersede any determinations made automatically by Privacy
-Badger.
+block cookies from being read or created. Cookie block also trims or removes
+the referer header. Block will cause any requests from that origin to be
+blocked entirely; before even a TCP connection can be established. The user can
+toggle these options manually, which will supersede any determinations made
+automatically by Privacy Badger.
 
 #### What does EFFs Do Not Track policy stipulate?
 
@@ -234,35 +245,22 @@ research has determined that this is a reliable way to distinguish between
 fingerprinting and other third party canvas uses.
 
 This may be augmented by hooks to detect extensive enumeration of properties
-in the <tt>navigator</tt> object in the near future.
+in the `navigator` object in the future.
+
+#### Pixel cookie sharing detection
+
+Detection of first to third party cookie sharing via image pixels was added in [#2088](https://github.com/EFForg/privacybadger/issues/2088).
+
+#### Beacon API detection
+
+Added in https://github.com/EFForg/privacybadger/pull/2898.
 
 ### ROADMAP
 
-#### Click-to-play for extensions
+#### High priority issues
 
-Certain browser add-ons, like Flash, expose an enormous amount of identifying
-information about a user's system. Privacy Badger in the future should disable
-these by default and allow users to have the option to agree to their use on a
-site by site basis.
+Please see our ["high priority"-labeled issues](https://github.com/EFForg/privacybadger/issues?q=is%3Aissue+is%3Aopen+label%3A%22high+priority%22).
 
-## Technical Implementation
 
-### How are origins and the rules for them stored?
-
-When a browser with Privacy Badger enabled makes a request to a third party, if
-the request contains a cookie or the response tries to set a cookie it gets flagged as 'tracking'.
-Origins that make tracking requests get stored in a key→value store where the keys
-are the origins making the request, and the values are the first party origins these
-requests were made on. If that list of third parties contains three or more first party
-origins the third party origin gets added to another list of known trackers.
-When Privacy Badger gets a request from an origin on the known trackers list, if it
-is not on the cookie block list then Privacy Badger blocks that request. If it
-is on the cookie block list then the request is allowed to resolve, but all cookie
-setting and getting parts of it are blocked, as well as referer headers. Both of
-these lists are stored on disk, and persist between browser sessions.
-
-Additionally users can manually set the desired action for any FQDN.
-These get added to their own lists, which are also stored on disk, and get checked
-before Privacy Badger does its default action for a given origin. These are managed
-from the popup window for Privacy Badger on the page as well as the options menu
-for the whole extension.
+[Beacon API]: https://developer.mozilla.org/en-US/docs/Web/API/Beacon_API
+[remote config URL]: https://www.eff.org/files/pbconfig.json

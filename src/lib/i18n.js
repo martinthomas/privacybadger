@@ -1,46 +1,50 @@
 /*
- * This file is part of Adblock Plus <http://adblockplus.org/>,
+ * This file is part of Privacy Badger <https://privacybadger.org/>
+ * Copyright (C) 2014 Electronic Frontier Foundation
+ *
+ * Derived from Adblock Plus
  * Copyright (C) 2006-2013 Eyeo GmbH
  *
- * Adblock Plus is free software: you can redistribute it and/or modify
+ * Privacy Badger is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 3 as
  * published by the Free Software Foundation.
  *
- * Adblock Plus is distributed in the hope that it will be useful,
+ * Privacy Badger is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Adblock Plus.  If not, see <http://www.gnu.org/licenses/>.
+ * along with Privacy Badger.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-(function () {
+const LOCALE = chrome.i18n.getMessage('@@ui_locale').replace('-', '_'),
+  ON_POPUP = (document.location.pathname == "/skin/popup.html");
 
-const i18n = chrome.i18n;
+function localizeFaqLink() {
+  const LOCALIZED_HOMEPAGE_LOCALES = ['de', 'es', 'fr', 'ru', 'sv', 'zh_CN'];
+  if (ON_POPUP && LOCALIZED_HOMEPAGE_LOCALES.includes(LOCALE)) {
+    // update FAQ link to point to localized version
+    $('#help').prop('href', `https://privacybadger.org/${LOCALE.replace('_', '-').toLowerCase()}/#faq`);
+  }
+}
 
 function setTextDirection() {
-  function swap_css_property(selector, from, to) {
-    let $els = $(selector);
-    $els.each(i => {
-      let $el = $($els[i]);
-      $el.css(to, $el.css(from)).css(from, "unset");
-    });
-  }
-
   function toggle_css_value(selector, property, from, to) {
     let $els = $(selector);
     $els.each(i => {
       let $el = $($els[i]);
-      $el.css(property, $el.css(property) === from ? to : from);
+      if ($el.css(property) === from) {
+        $el.css(property, to);
+      }
     });
   }
 
   // https://www.w3.org/International/questions/qa-scripts#examples
-  // https://developer.chrome.com/webstore/i18n?csw=1#localeTable
-  const RTL_LANGS = ['ar', 'he', 'fa'];
-
-  if (RTL_LANGS.indexOf(i18n.getMessage('@@ui_locale')) == -1) {
+  // https://developer.chrome.com/docs/extensions/reference/api/i18n#locales
+  // TODO duplicated in src/js/webrequest.js
+  const RTL_LOCALES = ['ar', 'he', 'fa'];
+  if (!RTL_LOCALES.includes(LOCALE)) {
     return;
   }
 
@@ -48,22 +52,24 @@ function setTextDirection() {
   document.body.setAttribute("dir", "rtl");
 
   // popup page
-  if (document.location.pathname == "/skin/popup.html") {
+  if (ON_POPUP) {
     // fix floats
-    ['#privacyBadgerHeader h2', '#privacyBadgerHeader img', '#instruction img', '#version'].forEach((selector) => {
-      toggle_css_value(selector, "float", "left", "right");
-    });
-    ['#fittslaw', '#options', '#help', '#share', '.overlay_close'].forEach((selector) => {
+    ['#fittslaw', '.overlay-close'].forEach((selector) => {
       toggle_css_value(selector, "float", "right", "left");
     });
 
-    // fix padding
-    ['#version'].forEach((selector) => {
-      swap_css_property(selector, "padding-left", "padding-right");
-    });
-    ['#privacyBadgerHeader h2', '#instruction img', '#help', '#share'].forEach((selector) => {
-      swap_css_property(selector, "padding-right", "padding-left");
-    });
+    // Workaround for tooltipster dynamically inserted after localization
+    let css = document.createElement("style");
+    css.textContent = `
+    .breakage-note-tooltip .dismiss-tooltip {
+      margin-left: unset;
+      margin-right: 8px;
+    }
+    /* part of workaround for .clicker rows being hardcoded to ltr */
+    .breakage-note-tooltip .tooltip-box {
+      direction: rtl;
+    }`;
+    document.body.appendChild(css);
 
   // options page
   } else if (document.location.pathname == "/skin/options.html") {
@@ -79,86 +85,114 @@ function setTextDirection() {
 `;
     document.body.appendChild(css);
 
-    // fix margins
-    ['#settings-suffix', '#check-dnt-policy-row'].forEach((selector) => {
-      swap_css_property(selector, "margin-left", "margin-right");
-    });
-    ['#whitelistForm > div > div > div'].forEach((selector) => {
-      swap_css_property(selector, "margin-right", "margin-left");
-    });
-
     // fix floats
-    ['.btn-silo', '.btn-silo div', '#whitelistForm > div > div > div'].forEach((selector) => {
+    ['.btn-silo', '.btn-silo div', '#allowlist-form > div > div > div', '#widget-site-exceptions-select-div', '#widget-site-exceptions-remove-button'].forEach((selector) => {
       toggle_css_value(selector, "float", "left", "right");
     });
+
+    // Adjust tip on Disabled Sites tab
+    if (!window.navigator.userAgent.match(/OPR\//)) {
+      $('#disable-instructions-image').attr('src', "images/disable-instructions-rtl.png");
+    }
+    $('#tip-container').css({
+      borderLeft: 'unset',
+      borderRight: '4px solid #f06a0a'
+    });
+    $('#tip-icon').css({
+      marginRight: 'unset',
+      marginLeft: '8px'
+    });
+  } else if (document.location.pathname == "/skin/firstRun.html") {
+    $('#pin-nudge').css({
+      right: 'unset',
+      left: '15px'
+    });
+    if (window.navigator.userAgent.match(/OPR\//)) {
+      $('#pin-nudge-tail').css({
+        right: 'unset',
+        left: '10px'
+      });
+    } else {
+      $('#pin-nudge-tail').css({
+        right: 'unset',
+        left: '85px'
+      });
+      $('#pin-image').attr("src", "images/pinning-instructions-rtl.png");
+    }
+    $('#dismiss-nudge').css({
+      float: 'left',
+      right: 'unset',
+      left: '-5px'
+    });
+    $('#toolbar-icon').css("transform", "scaleX(-1)");
   }
 }
 
-// Loads and inserts i18n strings into matching elements. Any inner HTML already in the
-// element is parsed as JSON and used as parameters to substitute into placeholders in the
-// i18n message.
+/**
+ * Loads and inserts i18n strings into matching elements.
+ */
 function loadI18nStrings() {
-  setTextDirection();
+  let els = document.querySelectorAll("[class^='i18n_']");
 
-  // replace span contents by their class names
-  let nodes = document.querySelectorAll("[class^='i18n_']");
-  for (let i = 0; i < nodes.length; i++) {
-    const args = JSON.parse("[" + nodes[i].textContent + "]");
-    let className = nodes[i].className;
-    if (className instanceof SVGAnimatedString) {
-      className = className.animVal;
-    }
-    const stringName = className.split(/\s/)[0].substring(5);
-    const prop = "innerHTML" in nodes[i] ? "innerHTML" : "textContent";
-    if (args.length > 0) {
-      nodes[i][prop] = i18n.getMessage(stringName, args);
-    } else {
-      nodes[i][prop] = i18n.getMessage(stringName);
-    }
+  // replace element contents by their class names
+  for (let el of els) {
+    const key = el.className.split(/\s/)[0].slice(5),
+      prop = ("innerHTML" in el ? "innerHTML" : "textContent");
+
+    // get chrome.i18n placeholders, if any
+    let placeholders = el.dataset.i18n_contents_placeholders;
+    placeholders = (placeholders ? placeholders.split("@@") : []);
+
+    // replace contents
+    el[prop] = chrome.i18n.getMessage(key, placeholders);
   }
 
-  // also replace alt, placeholder and title attributes
+  // also replace alt, placeholder, title and aria-label attributes
   const ATTRS = [
     'alt',
     'placeholder',
     'title',
+    'aria-label',
+    'aria-description',
   ];
 
   // get all the elements that contain one or more of these attributes
-  nodes = document.querySelectorAll(
+  els = document.querySelectorAll(
     // for example: "[placeholder^='i18n_'], [title^='i18n_']"
     "[" + ATTRS.join("^='i18n_'], [") + "^='i18n_']"
   );
 
   // for each element
-  for (let i = 0; i < nodes.length; i++) {
+  for (let el of els) {
     // for each attribute
-    ATTRS.forEach(attr_type => {
+    for (let attr_type of ATTRS) {
       // get the translation message key
-      let key = nodes[i].getAttribute(attr_type);
+      let key = el.getAttribute(attr_type);
+
+      // attribute exists
       if (key) {
         // remove the i18n_ prefix
-        key = key.slice(5);
+        key = key.startsWith("i18n_") && key.slice(5);
       }
 
-      // if the attribute exists and looks like i18n_KEY
-      if (key) {
-        // get chrome.i18n placeholders, if any
-        let placeholders = nodes[i].dataset.i18n_placeholders;
-        if (placeholders) {
-          placeholders = placeholders.split("@@");
-        } else {
-          placeholders = [];
-        }
-
-        // update the attribute with the result of a translation lookup by KEY
-        nodes[i].setAttribute(attr_type, i18n.getMessage(key, placeholders));
+      if (!key) {
+        continue;
       }
-    });
+
+      // get chrome.i18n placeholders, if any
+      // TODO multiple attributes are not supported
+      let placeholders = el.dataset.i18n_attribute_placeholders;
+      placeholders = (placeholders ? placeholders.split("@@") : []);
+
+      // update the attribute with the result of a translation lookup by KEY
+      el.setAttribute(attr_type, chrome.i18n.getMessage(key, placeholders));
+    }
   }
 }
 
 // Fill in the strings as soon as possible
-window.addEventListener("DOMContentLoaded", loadI18nStrings, true);
-
-}());
+window.addEventListener("DOMContentLoaded", function () {
+  localizeFaqLink();
+  setTextDirection();
+  loadI18nStrings();
+}, true);

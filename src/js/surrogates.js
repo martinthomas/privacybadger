@@ -1,6 +1,5 @@
 /*
- *
- * This file is part of Privacy Badger <https://www.eff.org/privacybadger>
+ * This file is part of Privacy Badger <https://privacybadger.org/>
  * Copyright (C) 2016 Electronic Frontier Foundation
  *
  * Privacy Badger is free software: you can redistribute it and/or modify
@@ -16,9 +15,21 @@
  * along with Privacy Badger.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-require.scopes.surrogates = (function() {
+import db from "../data/surrogates.js";
+import utils from "./utils.js";
 
-const db = require('surrogatedb');
+const WIDGET_SURROGATES = utils.filter(db.hostnames, item => !!item.widgetName);
+
+function _match_prefix(url, hostname, tokens) {
+  let path_onwards = url.slice(url.indexOf(hostname) + hostname.length);
+  for (const token of tokens) {
+    if (path_onwards.startsWith(token)) {
+      return db.surrogates[token];
+    }
+  }
+
+  return false;
+}
 
 /**
  * Blocking tracking scripts (trackers) can cause parts of webpages to break.
@@ -34,34 +45,65 @@ const db = require('surrogatedb');
  * parameter. This is an optimization: the calling context should already have
  * this information.
  *
- * @return {(String|Boolean)} The surrogate script as a data URI when there is a
- * match, or boolean false when there is no match.
+ * @param {?String} [resource_type] optional webRequest/DNR resource type;
+ * set to non-null to look up non-script (e.g. stylesheet) surrogates.
+ * Setting to null disables the resource type check.
+ *
+ * @return {(String|Boolean)} Extension URL to the surrogate script
+ * when there is a match; boolean false otherwise.
  */
-function getSurrogateURI(script_url, script_hostname) {
-  // do we have an entry for the script hostname?
-  if (db.hostnames.hasOwnProperty(script_hostname)) {
-    const tokens = db.hostnames[script_hostname];
+function getSurrogateUri(script_url, script_hostname, resource_type = 'script') {
+  if (window.SURROGATES_DISABLED) {
+    return false;
+  }
 
-    // it's a wildcard token
-    if (_.isString(tokens)) {
-      if (db.surrogates.hasOwnProperty(tokens)) {
-        // return the surrogate code
-        return 'data:application/javascript;base64,' + btoa(db.surrogates[tokens]);
+  // do we have an entry for the resource hostname?
+  if (!utils.hasOwn(db.hostnames, script_hostname)) {
+    return false;
+  }
+
+  const conf = db.hostnames[script_hostname];
+
+  if (resource_type !== null) {
+    // most but not all surrogates are for script resources
+    if (utils.hasOwn(conf, 'resourceType')) {
+      if (conf.resourceType != resource_type) {
+        return false;
       }
+    } else if (resource_type != 'script') {
+      return false;
     }
+  }
 
-    // must be an array of suffix tokens
-    const qs_start = script_url.indexOf('?');
+  switch (conf.match) {
 
-    for (let i = 0; i < tokens.length; i++) {
+  // wildcard token:
+  // matches any script URL for the hostname
+  case db.MATCH_ANY: {
+    return db.surrogates[conf.token];
+  }
+
+  // one or more suffix tokens:
+  // does the script URL (querystring and hash excluded) end with one of these tokens?
+  case db.MATCH_SUFFIX: {
+    const hash_start = script_url.indexOf('#'),
+      qs_start = (hash_start == -1 ?
+        script_url.indexOf('?') :
+        script_url.slice(0, hash_start).indexOf('?'));
+
+    for (const token of conf.tokens) {
       // do any of the suffix tokens match the script URL?
-      const token = tokens[i];
-
       let match = false;
 
       if (qs_start == -1) {
-        if (script_url.endsWith(token)) {
-          match = true;
+        if (hash_start == -1) {
+          if (script_url.endsWith(token)) {
+            match = true;
+          }
+        } else {
+          if (script_url.endsWith(token, hash_start)) {
+            match = true;
+          }
         }
       } else {
         if (script_url.endsWith(token, qs_start)) {
@@ -69,19 +111,54 @@ function getSurrogateURI(script_url, script_hostname) {
         }
       }
 
+      // there is a match, return the surrogate code
       if (match) {
-        // there is a match, return the surrogate code
-        return 'data:application/javascript;base64,' + btoa(db.surrogates[token]);
+        return db.surrogates[token];
       }
     }
+
+    return false;
+  }
+
+  // one or more prefix tokens:
+  // does the script URL's path component begin with one of these tokens?
+  case db.MATCH_PREFIX: {
+    return _match_prefix(script_url, script_hostname, conf.tokens);
+  }
+
+  // MATCH_PREFIX with querystring parameter matching
+  case db.MATCH_PREFIX_WITH_PARAMS: {
+    let surl = _match_prefix(script_url, script_hostname, conf.tokens);
+
+    if (!surl) {
+      return false;
+    }
+
+    // check every key/value pair in conf.params against the querystring
+    let qs = (new URL(script_url)).searchParams;
+    for (let [key, value] of Object.entries(conf.params)) {
+      // is the key present?
+      if (value === true) {
+        if (!qs.get(key)) {
+          return false;
+        }
+      // is the key present and do the values match?
+      } else if (utils.isString(value)) {
+        if (qs.get(key) !== value) {
+          return false;
+        }
+      }
+    }
+
+    return surl;
+  }
+
   }
 
   return false;
 }
 
-const exports = {
-  getSurrogateURI: getSurrogateURI,
+export default {
+  getSurrogateUri,
+  WIDGET_SURROGATES
 };
-
-return exports;
-})();

@@ -1,5 +1,5 @@
 /*
- * This file is part of Privacy Badger <https://www.eff.org/privacybadger>
+ * This file is part of Privacy Badger <https://privacybadger.org/>
  * Copyright (C) 2015 Electronic Frontier Foundation
  *
  * Derived from Chameleon <https://github.com/ghostwords/chameleon>
@@ -18,72 +18,6 @@
  * along with Privacy Badger.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/**
- * Generate script to inject into the page
- *
- * @returns {string}
- */
-function getScPageScript() {
-  // code below is not a content script: no chrome.* APIs /////////////////////
-
-  // return a string
-  return "(" + function () {
-
-    try {
-      localStorage; // eslint-disable-line no-unused-expressions
-    } catch (ex) {
-      // abort when we can't access localStorage
-      // such as when "Block third-party cookies" is enabled in Chrome
-      return;
-    }
-
-    (function (DOCUMENT, dispatchEvent, CUSTOM_EVENT, LOCAL_STORAGE, OBJECT, keys) {
-
-      var event_id = DOCUMENT.currentScript.getAttribute('data-event-id-super-cookie');
-
-      /**
-       * send message to the content script
-       *
-       * @param {*} message
-       */
-      var send = function (message) {
-        dispatchEvent.call(DOCUMENT, new CUSTOM_EVENT(event_id, {
-          detail: message
-        }));
-      };
-
-      /**
-       * Read HTML5 local storage and return contents
-       * @returns {Object}
-       */
-      let getLocalStorageItems = function () {
-        let lsItems = {};
-        for (let i = 0; i < LOCAL_STORAGE.length; i++) {
-          let key = LOCAL_STORAGE.key(i);
-          lsItems[key] = LOCAL_STORAGE.getItem(key);
-        }
-        return lsItems;
-      };
-
-      if (event_id) { // inserted script may run before the event_id is available
-        let localStorageItems = getLocalStorageItems();
-        if (keys.call(OBJECT, localStorageItems).length) {
-          // send to content script
-          send({ localStorageItems });
-        }
-      }
-
-    // save locally to keep from getting overwritten by site code
-    } (document, document.dispatchEvent, CustomEvent, localStorage, Object, Object.keys));
-
-  } + "());";
-
-  // code above is not a content script: no chrome.* APIs /////////////////////
-
-}
-
-// END FUNCTION DEFINITIONS ///////////////////////////////////////////////////
-
 (function () {
 
 // don't inject into non-HTML documents (such as XML documents)
@@ -100,6 +34,69 @@ if (window.top == window) {
   return;
 }
 
+/**
+ * Generate script to inject into the page
+ *
+ * @returns {string}
+ */
+function getPageScript(event_id) {
+  // code below is not a content script: no chrome.* APIs /////////////////////
+
+  // return a string
+  return "(" + function (EVENT_ID) {
+
+    /*
+     * If localStorage is inaccessible, such as when "Block third-party cookies"
+     * in enabled in Chrome or when `dom.storage.enabled` is set to `false` in
+     * Firefox, do not go any further.
+     */
+    try {
+      // No localStorage raises an Exception in Chromium-based browsers, while
+      // it's equal to `null` in Firefox.
+      if (null === localStorage) {
+        throw false;
+      }
+    } catch (ex) {
+      return;
+    }
+
+    (function (DOCUMENT, dispatchEvent, CUSTOM_EVENT, LOCAL_STORAGE, OBJECT, keys) {
+
+      function send(message) {
+        dispatchEvent.call(DOCUMENT, new CUSTOM_EVENT(EVENT_ID, {
+          detail: message
+        }));
+      }
+
+      /**
+       * Read HTML5 local storage and return contents
+       * @returns {Object}
+       */
+      function getLocalStorageItems() {
+        let lsItems = {};
+        for (let i = 0; i < LOCAL_STORAGE.length; i++) {
+          let key = LOCAL_STORAGE.key(i);
+          lsItems[key] = LOCAL_STORAGE.getItem(key);
+        }
+        return lsItems;
+      }
+
+      let localStorageItems = getLocalStorageItems();
+      if (keys.call(OBJECT, localStorageItems).length) {
+        send({ localStorageItems });
+      }
+
+    // save locally to keep from getting overwritten by site code
+    } (document, document.dispatchEvent, CustomEvent, localStorage, Object, Object.keys));
+
+  } + "(" + event_id + "));";
+
+  // code above is not a content script: no chrome.* APIs /////////////////////
+
+}
+
+// END FUNCTION DEFINITIONS ///////////////////////////////////////////////////
+
 // TODO race condition; fix waiting on https://crbug.com/478183
 
 // TODO here we could also be injected too quickly
@@ -112,27 +109,30 @@ if (window.top == window) {
 //
 // could then remove test workarounds like
 // https://github.com/EFForg/privacybadger/commit/39d5d0899e22d1c451d429e44553c5f9cad7fc46
+
+// TODO sometimes contentscripts/utils.js isn't here?!
+// TODO window.FRAME_URL / window.injectScript are undefined ...
 chrome.runtime.sendMessage({
-  checkEnabledAndThirdParty: window.FRAME_URL
+  type: "detectSupercookies",
+  frameUrl: window.FRAME_URL
 }, function (enabledAndThirdParty) {
   if (!enabledAndThirdParty) {
     return;
   }
 
-  var event_id_super_cookie = Math.random();
+  const event_id = Math.random();
 
   // listen for messages from the script we are about to insert
-  document.addEventListener(event_id_super_cookie, function (e) {
+  document.addEventListener(event_id, function (e) {
     // pass these on to the background page (handled by webrequest.js)
     chrome.runtime.sendMessage({
-      superCookieReport: e.detail,
+      type: "supercookieReport",
+      data: e.detail,
       frameUrl: window.FRAME_URL
     });
   });
 
-  window.injectScript(getScPageScript(), {
-    event_id_super_cookie: event_id_super_cookie
-  });
+  window.injectScript(getPageScript(event_id));
 
 });
 

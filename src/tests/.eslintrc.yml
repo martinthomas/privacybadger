@@ -1,4 +1,0 @@
-globals:
-  # false to disallow overwriting
-  QUnit: false
-  sinon: false
