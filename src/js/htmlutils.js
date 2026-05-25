@@ -122,7 +122,8 @@ let htmlUtils = {
       allow: i18n.getMessage('domain_slider_allow_tooltip')
     };
 
-    let aria_label = i18n.getMessage('domain_slider_label', 'XXX');
+    let aria_label = i18n.getMessage('domain_slider_label', 'XXX'),
+      undo_arrow_tooltip = i18n.getMessage('feed_the_badger_title');
 
     return function (fqdn, action) {
       let id = fqdn.replace(/\./g, '-');
@@ -137,6 +138,7 @@ let htmlUtils = {
     <label title="${tooltips.allow}" class="tooltip" for="allow-${id}"></label>
     <a></a>
   </div>
+  <a href="" class="honeybadgerPowered tooltip" title="${undo_arrow_tooltip}" aria-label="${undo_arrow_tooltip}"></a>
 </div>
       `.trim();
     };
@@ -175,7 +177,7 @@ let htmlUtils = {
   getOriginHtml: (function () {
 
     const breakage_warning_tooltip = i18n.getMessage('breakage_warning_tooltip'),
-      undo_arrow_tooltip = i18n.getMessage('feed_the_badger_title');
+      remove_button_label = i18n.getMessage('remove_button');
 
     return function (fqdn, action, show_breakage_warning, show_breakage_note, blockedFpScripts) {
       action = escape_html(action);
@@ -217,9 +219,8 @@ let htmlUtils = {
     <span class="ui-icon ui-icon-alert tooltip breakage-warning" title="${breakage_warning_tooltip}" aria-label="${breakage_warning_tooltip}" role="img" tabindex="0"></span>
     <span class="origin-inner tooltip" title="${domain_tooltip}" role="heading" aria-level="4" aria-label="${domain_tooltip}">${dnt_html}${shield_icon}${fqdn}</span>
   </div>
-  <a href="" class="removeOrigin">&#10006</a>
   ${htmlUtils.getToggleHtml(fqdn, action, blockedFpScripts)}
-  <a href="" class="honeybadgerPowered tooltip" title="${undo_arrow_tooltip}" aria-label="${undo_arrow_tooltip}"></a>
+  <a href="" class="removeDomain" role="button" aria-label="${remove_button_label}">&#10006</a>
 </div>
       `.trim();
     };

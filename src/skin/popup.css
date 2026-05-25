@@ -74,6 +74,7 @@ button {
     height: 40px;
     overflow: hidden;
     line-height: normal;
+    position: relative; /* so that we can abs position child els (removeDomain) */
 }
 .clicker:not(#not-yet-blocked-header):not(#non-trackers-header) {
     direction: ltr;
@@ -128,21 +129,24 @@ button {
     width: 20px;
     height: 20px;
     position: relative;
-    left: 340px;
+    left: 120px;
     bottom: 15px;
 }
 .userset .honeybadgerPowered {
-    display: block;
+    display: inline-block;
     background: url('/icons/badger-pin.png') no-repeat;
 }
 
-a.removeOrigin {
-    float: right;
-    margin-right: 10px;
+a.removeDomain {
+    display: none;
+    margin-right: 15px;
     width: 10px;
     text-decoration: none;
+    position: absolute;
+    right: 0;
+    top: 6px;
 }
-a.removeOrigin:hover {
+a.removeDomain:hover {
     color: red !important;
 }
 
@@ -633,15 +637,15 @@ a.overlay-close:hover {
         margin-left: 150px;
     }
 
+    .honeybadgerPowered {
+        left: 105px;
+    }
+
     .key {
         left: 150px;
     }
     .key img {
         margin-left: 12px;
-    }
-
-    .honeybadgerPowered {
-        left: 255px;
     }
 
     #share {

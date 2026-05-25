@@ -15,6 +15,7 @@
             "booking.flyfrontier.com",
             "www.flyfrontier.com",
             "gopro.com",
+            "herafinejewelry.com",
             "www.madewell.com",
             "www.mazdausa.com"
         ],
@@ -147,6 +148,7 @@
             ],
             "velocityweather.com": [
                 "baynews9.com",
+                "www.airnavradar.com",
                 "www.wishtv.com"
             ]
         },
@@ -363,6 +365,9 @@
                 "domains.squarespace.com",
                 "secure.squarespace.com"
             ],
+            "app.five9.com": [
+                "www.drphillipscenter.org"
+            ],
             "geoip-js.com": [
                 "www.airmusictech.com",
                 "www.alesisdrums.com",
@@ -479,6 +484,9 @@
                 "heardlewordle.io",
                 "reheardle.com",
                 "reheardle.xyz"
+            ],
+            "spotify.com": [
+                "play.megaphone.fm"
             ],
             "cdn.trackjs.com": [
                 "www.delta.com"
@@ -1010,6 +1018,7 @@
         "developers.kakao.com",
         "kapi.kakao.com",
         "cdnapi.kaltura.com",
+        "cdnapi-ev.kaltura.com",
         "cdnapi-legacy.kaltura.com",
         "cdnapisec.kaltura.com",
         "cdnbakmi.kaltura.com",
@@ -1023,6 +1032,8 @@
         "mediaspace.kaltura.com",
         "ott.kaltura.com",
         "api.irp2.ovp.kaltura.com",
+        "api.syp2.ovp.kaltura.com",
+        "unisphere.syp2.ovp.kaltura.com",
         "cfvod.irp2.ovp.kaltura.com",
         "upload.kaltura.com",
         "www.kaltura.com",
@@ -1113,6 +1124,8 @@
         "mlive.com",
         "mncdn.com",
         "verify.monzo.com",
+        "api.moonpay.com",
+        "buy.moonpay.com",
         "mozu.com",
         "msecnd.net",
         "msn.com",
@@ -1165,6 +1178,7 @@
         "canadiantire.tt.omtrdc.net",
         "dsw.tt.omtrdc.net",
         "walgreenco.tt.omtrdc.net",
+        "on.aws",
         "onetrust.com",
         "onetrust.eu",
         "h-microsoft.online-metrix.net",

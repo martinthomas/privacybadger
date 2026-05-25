@@ -42,18 +42,22 @@ const DOMAIN_TOOLTIP_CONF = {
 function getLink() {
   let linkRotation = [
     {
-      url: constants.REVIEW_LINKS[constants.BROWSER] || constants.REVIEW_LINKS.chrome, // Default to Chrome if unknown
-      text: "popup_review_pb",
-      icon: "ui-icon-star",
-      odds: 0.3 // Odds of all links should add up to 1
-    },
-    {
       url: "https://supporters.eff.org/donate/support-privacy-badger",
       text: "popup_donate_to_eff",
       icon: "ui-icon-heart",
-      odds: 0.7
+      odds: 1.0
     }
   ];
+  if (utils.hasOwn(constants.REVIEW_LINKS, constants.BROWSER)) {
+    linkRotation[0].odds = 0.7;
+
+    linkRotation.push({
+      url: constants.REVIEW_LINKS[constants.BROWSER],
+      text: "popup_review_pb",
+      icon: "ui-icon-star",
+      odds: 0.3 // Odds of all links should add up to 1
+    });
+  }
 
   let rand = Math.random();
   let cumulative_odds = 0;
@@ -548,7 +552,7 @@ function toggleFirstPartyInfoHandler() {
 function revertDomainControl(event) {
   event.preventDefault();
 
-  let domain = $(event.target).parent().data('origin');
+  let domain = $(event.target).parent().parent().data('origin');
 
   chrome.runtime.sendMessage({
     type: "revertDomainControl",
@@ -684,6 +688,11 @@ function refreshPopup() {
       // disable Disable/Report buttons
       $('#deactivate_site_btn').prop('disabled', true);
       $('#error').prop('disabled', true);
+
+      // hide donate/rate/etc. to max. attention on disable button tip
+      $('#donate').text("");
+      $('#version').hide();
+
     } else {
       // show the "nothing to do here" message
       $('#special-browser-page').show();
@@ -875,11 +884,6 @@ function refreshPopup() {
     const CHUNK = 1;
 
     let $printable = $(printable.splice(0, CHUNK).join(""));
-
-    // Hide elements for removing domains (controlled from the options page).
-    // Popup shows what's loaded for the current page so it doesn't make sense
-    // to have removal ability here.
-    $printable.find('.removeOrigin').hide();
 
     $printable.appendTo('#blockedResourcesInner');
 
